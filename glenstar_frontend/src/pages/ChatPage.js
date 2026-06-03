@@ -1,1 +1,1 @@
-export { ChatPage as default } from './AllPages';
+export { ChatPage    as default } from './AllPages';
