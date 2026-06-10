@@ -591,6 +591,7 @@ export default function UnderwritingPage() {
   const [regionFilter,   setRegion] = useState('All regions');
   const [tierFilter,     setTier]   = useState('All tiers');
   const [search,         setSearch] = useState('');
+  const [copied,         setCopied] = useState(false);
 
   const mktData = selectedMarket ? MARKETS[selectedMarket] : null;
   const sizeData = mktData?.by_size?.[selectedSize] || null;
@@ -629,7 +630,7 @@ export default function UnderwritingPage() {
         </div>
       </div>
 
-      <div style={{display:'grid', gridTemplateColumns:'280px 1fr', gap:14, alignItems:'start'}}>
+      <div style={{display:'grid', gridTemplateColumns:'minmax(300px, 340px) 1fr', gap:16, alignItems:'start', width:'100%'}}>
 
         {/* ── Left: Market selector ──────────────────────── */}
         <div>
@@ -654,7 +655,7 @@ export default function UnderwritingPage() {
               <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
                 {REGIONS.map(r=>(
                   <button key={r} onClick={()=>setRegion(r)} className={`btn bsm ${regionFilter===r?'bp':'bg'}`} style={{fontSize:9}}>
-                    {r==='All regions'?'All':r.replace(' ','\n')}
+                    {r==='All regions'?'All':r}
                   </button>
                 ))}
               </div>
@@ -773,8 +774,23 @@ export default function UnderwritingPage() {
                 <div style={{fontSize:14,fontWeight:600,color:'var(--text)'}}>
                   {selectedMarket} — {selectedSize}
                 </div>
-                <div style={{fontSize:10,color:'var(--dim)',fontFamily:"'JetBrains Mono',monospace"}}>
-                  Q1 2026 broker data · All values per SF/yr unless noted
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <span style={{fontSize:10,color:'var(--dim)',fontFamily:"'JetBrains Mono',monospace"}}>
+                    Q1 2026 broker data
+                  </span>
+                  <button
+                    className="btn bg bsm"
+                    onClick={() => {
+                      const rows = FIELDS.map(fl => `${fl.label}\t${sizeData?.[fl.key] ?? 'N/A'}`).join('\n');
+                      const block = `${selectedMarket} — ${selectedSize}\nSource: ${mktData.source}\n\n${rows}`;
+                      navigator.clipboard.writeText(block).then(() => {
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      });
+                    }}
+                  >
+                    {copied ? '✓ Copied' : '⧉ Copy for Excel'}
+                  </button>
                 </div>
               </div>
 
@@ -784,20 +800,20 @@ export default function UnderwritingPage() {
                   <div className="ph">
                     <span className="pt">{group}</span>
                   </div>
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:0}}>
-                    {FIELDS.filter(f=>f.group===group).map((field,i,arr) => {
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))',gap:10,padding:'14px 16px'}}>
+                    {FIELDS.filter(f=>f.group===group).map((field) => {
                       const val = sizeData?.[field.key];
-                      const isLast = i === arr.length - 1;
                       return (
                         <div key={field.key} style={{
-                          padding:'16px 18px',
-                          borderRight: (i+1)%3===0?'none':'1px solid var(--border)',
-                          borderBottom: i < arr.length - (arr.length%3||3) ? '1px solid var(--border)' : 'none',
+                          padding:'14px 16px',
+                          background:'var(--surf2)',
+                          border:'1px solid var(--border)',
+                          borderRadius:8,
                         }}>
                           <div style={{fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:'var(--dim)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:8}}>
                             {field.label}
                           </div>
-                          <div style={{fontSize:22,fontFamily:"'Playfair Display',serif",fontWeight:600,color:val!=null?field.color(val):'var(--dim)',marginBottom:4}}>
+                          <div style={{fontSize:22,fontFamily:"'Playfair Display',serif",fontWeight:600,color:val!=null?field.color(val):'var(--dim)'}}>
                             {val != null ? field.fmt(val) : 'N/A'}
                           </div>
                         </div>

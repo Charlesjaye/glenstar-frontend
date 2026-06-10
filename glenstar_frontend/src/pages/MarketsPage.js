@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import UnderwritingTab from './UnderwritingTab';
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 const f = {
@@ -41,8 +40,7 @@ const SIZE_DESC = {
   s5:'750,000 SF+ — Mega-DCs. Build-to-suit only is the prudent 2026 strategy.',
 };
 
-// ── Analytics tab (existing market table) ─────────────────────────────────────
-function AnalyticsTab({ api }) {
+export default function MarketsPage({ api }) {
   const [markets, setMarkets] = useState([]);
   const [thesis,  setThesis]  = useState(null);
   const [size,    setSize]    = useState('all');
@@ -197,45 +195,6 @@ function AnalyticsTab({ api }) {
           <span style={{fontSize:10,color:'var(--dim)'}}>N/A = not reported · markets without data excluded</span>
         </div>
       </div>
-    </>
-  );
-}
-
-// ── Main MarketsPage with tabs ─────────────────────────────────────────────────
-export default function MarketsPage({ api }) {
-  const [tab, setTab] = useState('analytics');
-
-  return (
-    <>
-      {/* Sub-tab navigation */}
-      <div style={{
-        display: 'flex', gap: 4, marginBottom: 16,
-        borderBottom: '1px solid var(--border)', paddingBottom: 0,
-      }}>
-        {[
-          { k: 'analytics',    l: '◈  Market Analytics',         desc: 'Industrial fundamentals by market and size segment' },
-          { k: 'underwriting', l: '◇  Underwriting Assumptions',  desc: 'Validate your deal inputs against broker data' },
-        ].map(t => (
-          <button
-            key={t.k}
-            onClick={() => setTab(t.k)}
-            style={{
-              padding: '10px 18px', fontSize: 12, fontWeight: 500,
-              cursor: 'pointer', fontFamily: "'Inter',sans-serif",
-              border: 'none', background: 'none',
-              color: tab === t.k ? 'var(--orange)' : 'var(--muted)',
-              borderBottom: tab === t.k ? '2px solid var(--orange)' : '2px solid transparent',
-              marginBottom: -1, transition: 'all 0.15s',
-            }}
-            title={t.desc}
-          >
-            {t.l}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'analytics'    && <AnalyticsTab    api={api} />}
-      {tab === 'underwriting' && <UnderwritingTab api={api} />}
     </>
   );
 }
