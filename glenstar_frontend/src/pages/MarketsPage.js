@@ -1,21 +1,6 @@
 import React, { useState, useEffect } from 'react';
-
-// ── Formatters ─────────────────────────────────────────────────────────────────
-const f = {
-  pct:  v => v != null ? `${Number(v).toFixed(1)}%`         : 'N/A',
-  rent: v => v != null ? `$${Number(v).toFixed(2)}/SF`      : 'N/A',
-  msf:  v => v != null ? `${Number(v).toFixed(1)} MSF`      : 'N/A',
-  rg:   v => v != null ? `${v>=0?'+':''}${Number(v).toFixed(1)}%` : 'N/A',
-  cost: v => v != null ? `$${Math.round(Number(v))}/SF`     : 'N/A',
-};
-
-const clr = {
-  vac:  v => v == null ? 'var(--muted)' : v<7  ? 'var(--good)' : v<10 ? 'var(--warn)' : 'var(--danger)',
-  rg:   v => v == null ? 'var(--muted)' : v>=3 ? 'var(--good)' : v<0  ? 'var(--danger)' : 'var(--muted)',
-  abs:  v => v == null ? 'var(--muted)' : v>=0 ? 'var(--good)' : 'var(--danger)',
-  cost: v => v == null ? 'var(--muted)' : v<70 ? 'var(--good)' : v>120 ? 'var(--danger)' : 'var(--muted)',
-  sc:   s => s>=80 ? 'var(--orange)' : s>=65 ? 'var(--info)' : 'var(--purple)',
-};
+import { getJSON } from '../lib/api';
+import { f, clr } from '../lib/format';
 
 const SIZE_KEYS = {
   all: { vac:'vacancy_rate',   rent:'asking_rent_psf',  cost:'construction_cost_psf', abs:'ytd_absorption_msf' },
@@ -40,24 +25,25 @@ const SIZE_DESC = {
   s5:'750,000 SF+ — Mega-DCs. Build-to-suit only is the prudent 2026 strategy.',
 };
 
-export default function MarketsPage({ api }) {
+export default function MarketsPage() {
   const [markets, setMarkets] = useState([]);
   const [thesis,  setThesis]  = useState(null);
   const [size,    setSize]    = useState('all');
   const [search,  setSearch]  = useState('');
   const [region,  setRegion]  = useState('All');
   const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);
 
   useEffect(() => {
     Promise.all([
-      fetch(`${api}/api/markets/summary`).then(r => r.json()),
-      fetch(`${api}/api/thesis/current`).then(r => r.json()).catch(() => null),
+      getJSON('/api/markets/summary'),
+      getJSON('/api/thesis/current').catch(() => null), // scores are optional
     ]).then(([mkts, th]) => {
       setMarkets(Array.isArray(mkts) ? mkts : []);
-      if (th && !th.error) setThesis(th);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [api]);
+      if (th) setThesis(th);
+    }).catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   const scoreMap = {};
   const tierMap  = {};
@@ -131,6 +117,8 @@ export default function MarketsPage({ api }) {
 
         {loading ? (
           <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>Loading market data...</div>
+        ) : error ? (
+          <div style={{padding:40,textAlign:'center',color:'var(--danger)'}}>Could not load market data: {error}</div>
         ) : (
           <div style={{overflowX:'auto'}}>
             <table className="dtbl" style={{minWidth:980}}>

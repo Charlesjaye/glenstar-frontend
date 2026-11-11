@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { getJSON } from '../lib/api';
+import { BROKERAGE_COUNT } from '../lib/constants';
 
 function rnCls(r,t){if(t==='Avoid')return'rna';if(r===1)return'rn1';if(r===2)return'rn2';if(r===3)return'rn3';return'rno';}
 function sc2(s){return s>=80?'var(--orange)':s>=65?'var(--info)':'var(--purple)';}
@@ -50,7 +52,7 @@ function MarketRow({m,onOpen}){
   );
 }
 
-function ScorePopup({m,onClose}){
+function ScorePopup({m,quarter,onClose}){
   if(!m)return null;
   const ks=m.key_stats||{};
   return(
@@ -59,7 +61,7 @@ function ScorePopup({m,onClose}){
         <div className="popup-head">
           <div>
             <div className="popup-title">{m.market}</div>
-            <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{m.region} · Q1 2026 · Industrial</div>
+            <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{m.region}{quarter?` · ${quarter}`:''} · Industrial</div>
           </div>
           <button className="popup-close" onClick={onClose}>Close ✕</button>
         </div>
@@ -103,18 +105,20 @@ function ScorePopup({m,onClose}){
   );
 }
 
-export default function ThesisPage({api}){
+export default function ThesisPage({refreshKey}){
   const [thesis,  setThesis]  = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);
   const [tab,     setTab]     = useState('summary');
   const [popup,   setPopup]   = useState(null);
 
   useEffect(()=>{
-    fetch(`${api}/api/thesis/current`)
-      .then(r=>r.json())
-      .then(d=>{setThesis(d);setLoading(false);})
-      .catch(()=>setLoading(false));
-  },[api]);
+    setError(null);
+    getJSON('/api/thesis/current')
+      .then(setThesis)
+      .catch(err=>setError(err.message))
+      .finally(()=>setLoading(false));
+  },[refreshKey]);
 
   const rankings    = thesis?.rankings    || [];
   const risks       = thesis?.risk_factors|| [];
@@ -130,18 +134,24 @@ export default function ThesisPage({api}){
     </div>
   );
 
+  if(error && !thesis) return(
+    <div className="panel" style={{padding:'40px',textAlign:'center',color:'var(--danger)',fontSize:12}}>
+      Could not load the investment thesis: {error}
+    </div>
+  );
+
   return(
     <>
       <div className="mrow">
-        <div className="mc"><div className="mcl">Reports ingested</div><div className="mcv">{thesis?.report_count||53}</div><div className="mcc up">6 brokerages</div></div>
-        <div className="mc"><div className="mcl">Markets tracked</div><div className="mcv">22</div><div className="mcc nu">Verified data only</div></div>
-        <div className="mc"><div className="mcl">Top market</div><div className="mcv" style={{fontSize:16,marginTop:4}}>{top10[0]?.market||'Dallas / FW'}</div><div className="mcc up">Score {top10[0]?.score||94}/100</div></div>
-        <div className="mc"><div className="mcl">Data quarter</div><div className="mcv" style={{fontSize:19,marginTop:4}}>{thesis?.quarter||'Q1 2026'}</div><div className="mcc nu">Auto-updating</div></div>
+        <div className="mc"><div className="mcl">Reports ingested</div><div className="mcv">{thesis?.report_count??'—'}</div><div className="mcc up">{BROKERAGE_COUNT} brokerages</div></div>
+        <div className="mc"><div className="mcl">Markets tracked</div><div className="mcv">{rankings.length||'—'}</div><div className="mcc nu">Verified data only</div></div>
+        <div className="mc"><div className="mcl">Top market</div><div className="mcv" style={{fontSize:16,marginTop:4}}>{top10[0]?.market||'—'}</div><div className="mcc up">{top10[0]?`Score ${top10[0].score}/100`:'No rankings yet'}</div></div>
+        <div className="mc"><div className="mcl">Data quarter</div><div className="mcv" style={{fontSize:19,marginTop:4}}>{thesis?.quarter||'—'}</div><div className="mcc nu">Auto-updating</div></div>
       </div>
 
       <div className="tc">
         <div className="panel" style={{height:600,display:'flex',flexDirection:'column',marginBottom:0}}>
-          <div className="ph"><span className="pt">AI Investment Thesis — {thesis?.quarter||'Q1 2026'}</span><span className="badge bl">● Industrial only</span></div>
+          <div className="ph"><span className="pt">AI Investment Thesis — {thesis?.quarter||'—'}</span><span className="badge bl">● Industrial only</span></div>
           <div className="tabrow">
             {[['summary','Summary'],['top10','Top 10'],['avoid','Avoid'],['risks','Risk Factors']].map(([k,v])=>(
               <div key={k} className={`tab ${tab===k?'on':''}`} onClick={()=>setTab(k)}>{v}</div>
@@ -156,14 +166,14 @@ export default function ThesisPage({api}){
                       ?<span key={j} className="hl">{c.slice(2,-2)}</span>
                       :c
                   )}</p>
-                )) : <p style={{color:'var(--dim)'}}>Loading thesis summary...</p>}
+                )) : <p style={{color:'var(--dim)'}}>No thesis summary has been generated yet.</p>}
               </div>
             )}
             {tab==='top10'&&(
               <>
                 <div style={{padding:'7px 16px',fontSize:10,color:'var(--dim)',borderBottom:'1px solid var(--border)'}}>Click any market for the full scoring breakdown →</div>
                 {top10.map(m=><MarketRow key={m.rank} m={m} onOpen={setPopup}/>)}
-                {top10.length===0&&<div style={{padding:20,color:'var(--dim)',fontSize:11}}>Rankings loading...</div>}
+                {top10.length===0&&<div style={{padding:20,color:'var(--dim)',fontSize:11}}>No rankings available yet.</div>}
               </>
             )}
             {tab==='avoid'&&(
@@ -192,16 +202,13 @@ export default function ThesisPage({api}){
                     </div>
                   </div>
                 ))}
-                {avoidList.length===0&&<div style={{padding:20,color:'var(--dim)',fontSize:11}}>Avoid market data loading...</div>}
+                {avoidList.length===0&&<div style={{padding:20,color:'var(--dim)',fontSize:11}}>No markets currently flagged to avoid.</div>}
               </>
             )}
             {tab==='risks'&&(
-              (risks.length>0?risks:[
-                {level:'high',title:'Steel & aluminum tariffs at 50%',detail:'Input costs up 7-12% annualized. Lock GC contracts with escalation caps. Procure structural steel early.'},
-                {level:'high',title:'Power and electrical capacity',detail:'Transformer lead times 18-24 months in Phoenix, Dallas, Atlanta. Underwrite power access before committing to land.'},
-                {level:'medium',title:'Skilled labor shortage',detail:'~500K additional workers needed nationally. Indianapolis, Louisville, Memphis have best labor availability.'},
-                {level:'low',title:'Lending environment improving',detail:'CBRE Lending Momentum Index at highest since 2018. Most favorable financing window for industrial in 3 years.'},
-              ]).map((r,i)=>(
+              risks.length===0
+                ? <div style={{padding:20,color:'var(--dim)',fontSize:11}}>No risk factors in the current thesis.</div>
+                : risks.map((r,i)=>(
                 <div className="riskr" key={i}>
                   <span className={`rl rl${r.level.charAt(0)}`}>{r.level}</span>
                   <div><div className="rkt">{r.title}</div><div className="rkd">{r.detail}</div></div>
@@ -215,12 +222,12 @@ export default function ThesisPage({api}){
           <div className="ph"><span className="pt">Top 10 target markets</span><span className="badge bl">Click for score breakdown</span></div>
           <div style={{flex:1,overflowY:'auto'}}>
             {top10.map(m=><MarketRow key={m.rank} m={m} onOpen={setPopup}/>)}
-            {top10.length===0&&<div style={{padding:20,color:'var(--dim)',fontSize:11}}>Rankings loading...</div>}
+            {top10.length===0&&<div style={{padding:20,color:'var(--dim)',fontSize:11}}>No rankings available yet.</div>}
           </div>
         </div>
       </div>
 
-      <ScorePopup m={popup} onClose={()=>setPopup(null)}/>
+      <ScorePopup m={popup} quarter={thesis?.quarter} onClose={()=>setPopup(null)}/>
     </>
   );
 }
