@@ -11,7 +11,7 @@ features come from a separate backend API (hosted on Render).
 | --------------- | ------------------------ | --------------------------------------------- |
 | `/`             | Live Investment Thesis   | `GET /api/thesis/current`                     |
 | `/markets`      | Market Analytics         | `GET /api/markets/summary`, thesis scores     |
-| `/underwriting` | Underwriting Assumptions | `src/data/underwritingMarkets.js` (static)    |
+| `/underwriting` | Underwriting Assumptions | `GET /api/underwriting/dataset`               |
 | `/chat`         | Ask Claude               | `POST /api/chat`                              |
 | `/reports`      | Report Library           | `GET /api/reports`                            |
 | `/monitor`      | Source Monitor           | `GET /api/monitor/sources`, `/api/thesis/history` |
@@ -34,7 +34,7 @@ The app opens at http://localhost:3000. Without `REACT_APP_API_URL`, API calls g
 origin as the page.
 
 ```bash
-npm test          # unit tests (API helper, routing, formatters, underwriting data checks)
+npm test          # unit tests (API helper, routing, formatters)
 npm run build     # production build into build/
 ```
 
@@ -59,14 +59,14 @@ glenstar_frontend/src/
   App.js                      shell: sidebar, header, routing
   lib/api.js                  fetch wrapper — throws on HTTP errors and {error} payloads
   lib/router.js               tiny path-based router
-  lib/constants.js            brokerage list, schedule, underwriting data quarter
+  lib/constants.js            brokerage list, scan schedule
   lib/format.js               shared number formatters / colour scales
-  data/underwritingMarkets.js underwriting assumptions by market and building size
   pages/                      one file per page
 ```
 
 ## Updating underwriting data each quarter
 
-1. Edit `src/data/underwritingMarkets.js`.
-2. Update `UNDERWRITING_QUARTER` in `src/lib/constants.js`.
-3. Run `npm test` — the data checks flag missing fields and out-of-range values (typos).
+The underwriting assumptions live in the backend repo (`Glenstar-Backend`), in
+`underwriting_markets.json`. Edit that file (including its `quarter` field), run
+`python -m unittest discover tests` there to catch missing fields or typos, and redeploy the
+backend — no frontend change needed.

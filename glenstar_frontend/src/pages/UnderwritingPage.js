@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { MARKETS, SIZES } from '../data/underwritingMarkets';
-import { UNDERWRITING_QUARTER, BROKERAGES } from '../lib/constants';
+import React, { useState, useEffect } from 'react';
+import { getJSON } from '../lib/api';
 
 // ── Tier colors ───────────────────────────────────────────────────────────────
 const tierStyle = {
@@ -9,7 +8,6 @@ const tierStyle = {
   Avoid:     { bg: 'rgba(252,165,165,0.08)', border: 'rgba(252,165,165,0.25)', color: 'var(--danger)' },
 };
 
-const REGIONS = ['All regions', ...new Set(Object.values(MARKETS).map(m => m.region).sort())];
 const TIERS   = ['All tiers', 'Primary', 'Secondary', 'Avoid'];
 
 // ── Field definitions for the output table ───────────────────────────────────
@@ -31,9 +29,40 @@ const FIELDS = [
   { key: 'cap_reserve',   label: 'Capital Reserve',     fmt: v => `$${Number(v).toFixed(2)}/SF`,    color: () => 'var(--muted)',        group: 'Operating' },
 ];
 
+// Loads the underwriting dataset from the backend (GET /api/underwriting/dataset),
+// which is the single source of truth — edit underwriting_markets.json there.
 export default function UnderwritingPage() {
+  const [dataset, setDataset] = useState(null);
+  const [error,   setError]   = useState(null);
+
+  useEffect(() => {
+    getJSON('/api/underwriting/dataset')
+      .then(d => {
+        if (!d || !d.markets || Object.keys(d.markets).length === 0) throw new Error('dataset is empty');
+        setDataset(d);
+      })
+      .catch(err => setError(err.message));
+  }, []);
+
+  if (error) return (
+    <div className="panel" style={{padding:40,textAlign:'center',color:'var(--danger)',fontSize:12}}>
+      Could not load underwriting data: {error}
+    </div>
+  );
+  if (!dataset) return (
+    <div style={{padding:'60px 0',textAlign:'center',color:'var(--muted)'}}>Loading underwriting data...</div>
+  );
+  return <UnderwritingView dataset={dataset} />;
+}
+
+function UnderwritingView({ dataset }) {
+  const MARKETS = dataset.markets;
+  const SIZES   = Object.keys(Object.values(MARKETS)[0].by_size);
+  const REGIONS = ['All regions', ...new Set(Object.values(MARKETS).map(m => m.region).sort())];
+  const QUARTER = dataset.quarter || '';
+
   const [selectedMarket, setMarket] = useState('');
-  const [selectedSize,   setSize]   = useState('100K-250K SF');
+  const [selectedSize,   setSize]   = useState(SIZES.includes('100K-250K SF') ? '100K-250K SF' : SIZES[0]);
   const [regionFilter,   setRegion] = useState('All regions');
   const [tierFilter,     setTier]   = useState('All tiers');
   const [search,         setSearch] = useState('');
@@ -170,7 +199,7 @@ export default function UnderwritingPage() {
               <div style={{fontSize:32,marginBottom:16}}>◇</div>
               <div style={{fontSize:14,color:'var(--text)',fontWeight:600,marginBottom:8}}>Select a market to populate assumptions</div>
               <div style={{fontSize:11,color:'var(--dim)',maxWidth:400,margin:'0 auto',lineHeight:1.7}}>
-                Choose a market from the left and a building size to instantly populate underwriting assumptions sourced from {UNDERWRITING_QUARTER} broker reports ({BROKERAGES.join(', ')}).
+                Choose a market from the left and a building size to instantly populate underwriting assumptions sourced from {QUARTER} broker reports{dataset.sources ? ` (${dataset.sources})` : ''}.
               </div>
             </div>
           ) : (
@@ -222,7 +251,7 @@ export default function UnderwritingPage() {
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:10}}>
                   <span style={{fontSize:10,color:'var(--dim)',fontFamily:"'JetBrains Mono',monospace"}}>
-                    {UNDERWRITING_QUARTER} broker data
+                    {QUARTER} broker data
                   </span>
                   <button
                     className="btn bg bsm"

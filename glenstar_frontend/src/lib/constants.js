@@ -7,5 +7,3 @@ export const BROKERAGE_COUNT = BROKERAGES.length;
 
 export const SCAN_SCHEDULE = '6:00 AM and 6:00 PM UTC';
 
-// Underwriting dataset vintage — update together with src/data/underwritingMarkets.js.
-export const UNDERWRITING_QUARTER = 'Q1 2026';

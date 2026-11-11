@@ -7,11 +7,8 @@ import ReportsPage      from './pages/ReportsPage';
 import MonitorPage      from './pages/MonitorPage';
 import UnderwritingPage from './pages/UnderwritingPage';
 import { getJSON, postJSON } from './lib/api';
-import { BROKERAGE_COUNT, UNDERWRITING_QUARTER } from './lib/constants';
-import { MARKETS as UNDERWRITING_MARKETS } from './data/underwritingMarkets';
+import { BROKERAGE_COUNT } from './lib/constants';
 import { usePage } from './lib/router';
-
-const UW_MARKET_COUNT = Object.keys(UNDERWRITING_MARKETS).length;
 
 const NAV = [
   { id: 'thesis',       path: '/',             label: 'Live Thesis',      icon: '◆', group: 'Analysis' },
@@ -25,7 +22,7 @@ const NAV = [
 const META = {
   thesis:       { title: 'Live Investment Thesis',   sub: `AI-generated · ${BROKERAGE_COUNT} brokerages · industrial only · auto-updates twice daily` },
   markets:      { title: 'Market Analytics',         sub: 'Industrial fundamentals by building size · size-specific construction costs · verified data only' },
-  underwriting: { title: 'Underwriting Assumptions', sub: `${UW_MARKET_COUNT} markets · ${UNDERWRITING_QUARTER} broker data · select market + building size to populate all assumptions` },
+  underwriting: { title: 'Underwriting Assumptions', sub: 'Quarterly broker data · select market + building size to populate all assumptions' },
   chat:         { title: 'Ask Claude',               sub: 'AI-powered industrial market analysis grounded in verified broker data' },
   reports:      { title: 'Report Library',           sub: 'Click any market name ↗ to open the original broker report' },
   monitor:      { title: 'Source Monitor',           sub: `Twice-daily scans at 6:00 AM and 6:00 PM · ${BROKERAGE_COUNT} brokerages · auto quarter detection` },
