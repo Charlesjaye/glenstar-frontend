@@ -1,107 +1,92 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { postJSON } from '../lib/api';
-import { BROKERAGES } from '../lib/constants';
+import { Banner, Icon, Link, Spinner, useApp } from '../components/ui';
 
 const SUGGESTED = [
-  'Why is Dallas ranked #1?',
-  'What size product should we build in Indianapolis?',
-  'Compare Nashville vs Savannah',
-  'Where are construction costs cheapest for small-bay?',
-  'What markets should we avoid and why?',
-  'Where is lender appetite strongest in 2026?',
-  'Which markets have the best big-box fundamentals?',
-  'What is the current quarter and what data is available?',
+  'Which markets have the tightest vacancy right now?',
+  'Where is the construction pipeline largest relative to absorption?',
+  'Compare the two strongest markets for new development.',
+  'Which markets should we be cautious about, and why?',
+  'What data are we missing for this quarter?',
 ];
 
-export default function ChatPage({ apiReady, marketCount }) {
-  const marketText = marketCount ? `${marketCount} US markets` : 'tracked US markets';
-  const [messages, setMessages] = useState([{
-    role:'assistant',
-    content:`I have access to verified industrial market data from ${BROKERAGES.slice(0,-1).join(', ')}, and ${BROKERAGES[BROKERAGES.length-1]} across ${marketText}. Ask me anything — vacancy rates, rents by building size, construction costs, absorption trends, or where Glenstar should develop next. I'll give you specific numbers from the actual broker reports.`
-  }]);
-  const [input,   setInput]   = useState('');
+export default function ChatPage() {
+  const { stats } = useApp();
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const bottomRef = useRef(null);
+  const bottom = useRef(null);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior:'smooth' });
-  }, [messages]);
+  useEffect(() => { if (bottom.current && bottom.current.scrollIntoView) bottom.current.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
 
-  const send = async (text) => {
-    const msg = (text || input).trim();
-    if (!msg || loading) return;
+  const send = async text => {
+    const message = (text || input).trim();
+    if (!message || loading) return;
     setInput('');
-    const newHistory = [...messages, { role:'user', content:msg }];
-    setMessages(newHistory);
+    const history = messages.filter(m => !m.error).map(m => ({ role: m.role, content: m.content }));
+    setMessages(list => [...list, { role: 'user', content: message }]);
     setLoading(true);
-
     try {
-      const data = await postJSON('/api/chat', {
-        message: msg,
-        history: messages.map(m => ({ role:m.role, content:m.content })),
-      });
-      setMessages(prev => [...prev, { role:'assistant', content:data.reply }]);
+      const data = await postJSON('/api/chat', { message, history });
+      setMessages(list => [...list, { role: 'assistant', content: data.reply }]);
     } catch (err) {
-      setMessages(prev => [...prev, {
-        role:'assistant',
-        content:`Sorry — the request failed: ${err.message}. If this keeps happening, check that the backend service on Render is running.`
-      }]);
+      setMessages(list => [...list, { role: 'assistant', content: err.message, error: true }]);
     }
     setLoading(false);
   };
 
+  const ready = stats && stats.api_key_configured;
+  const empty = stats && stats.market_count === 0;
+
   return (
-    <div style={{maxWidth:860}}>
-      {apiReady === false && (
-        <div style={{background:'rgba(252,165,165,0.08)',border:'1px solid rgba(252,165,165,0.25)',borderRadius:8,padding:'12px 16px',marginBottom:14,fontSize:11,color:'var(--danger)',lineHeight:1.7}}>
-          <strong>Anthropic API key not configured.</strong> To enable AI chat:<br/>
-          1. Go to <strong>render.com</strong> → your backend service → <strong>Environment</strong> tab<br/>
-          2. Add variable: <code style={{background:'rgba(255,255,255,0.08)',padding:'1px 5px',borderRadius:3}}>ANTHROPIC_API_KEY</code> = your key from console.anthropic.com<br/>
-          3. Click Save → wait 2-3 minutes for redeploy<br/>
-          Your key starts with <code style={{background:'rgba(255,255,255,0.08)',padding:'1px 5px',borderRadius:3}}>sk-ant-api03-</code>
+    <div className="chat">
+      {stats && !ready && (
+        <div style={{ marginBottom: 14 }}>
+          <Banner tone="bad" title="Ask Claude is not set up">
+            Add <span className="mono">ANTHROPIC_API_KEY</span> to the backend service (Render → your service → Environment) and redeploy.
+          </Banner>
         </div>
       )}
-
-      {messages.length <= 1 && (
-        <div style={{marginBottom:14}}>
-          <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:'var(--dim)',marginBottom:9}}>Suggested questions — click to ask</div>
-          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-            {SUGGESTED.map(s => <button key={s} className="btn bg bsm" onClick={()=>send(s)}>{s}</button>)}
-          </div>
+      {empty && (
+        <div style={{ marginBottom: 14 }}>
+          <Banner tone="info" title="No report data yet" action={<Link to="/data" className="btn sm primary">Add reports</Link>}>
+            Claude answers only from the broker reports on file, so it has nothing to draw on until some are added.
+          </Banner>
         </div>
       )}
-
-      <div className="panel" style={{display:'flex',flexDirection:'column'}}>
-        <div className="ph">
-          <span className="pt">Ask Claude — Industrial Market Intelligence</span>
-          <span className="badge bl">● {apiReady ? 'AI active' : 'API key needed'}{marketCount ? ` · ${marketCount} verified markets` : ''}</span>
-        </div>
-        <div className="cmsg">
-          {messages.map((m,i) => (
-            <div key={i} style={{display:'flex',flexDirection:'column',gap:4}}>
-              <div className={`mrol ${m.role==='assistant'?'ai':''}`}>{m.role==='assistant'?'Claude':'You'}</div>
-              <div className={`mb ${m.role==='user'?'u':''}`} style={{whiteSpace:'pre-wrap'}}>{m.content}</div>
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div className="chat-log">
+          {messages.length === 0 && (
+            <div style={{ margin: 'auto', textAlign: 'center', maxWidth: 560 }}>
+              <div className="empty-icon"><Icon name="chat" /></div>
+              <div className="empty-title">Ask about the report data</div>
+              <div className="empty-text">
+                Claude answers from the {stats ? stats.market_count : ''} market{stats && stats.market_count === 1 ? '' : 's'} of
+                broker data on file and cites the brokerage and quarter for each figure. If something is not in the
+                reports, it says so instead of guessing.
+              </div>
+              <div className="suggest" style={{ justifyContent: 'center' }}>
+                {SUGGESTED.map(s => <button key={s} className="btn sm" onClick={() => send(s)} disabled={!ready}>{s}</button>)}
+              </div>
+            </div>
+          )}
+          {messages.map((m, i) => (
+            <div key={i} className={`msg ${m.role === 'user' ? 'user' : ''} ${m.error ? 'err' : ''}`}>
+              <div className="msg-who">{m.role === 'user' ? 'You' : 'Claude'}</div>
+              <div className="bubble">{m.content}</div>
             </div>
           ))}
           {loading && (
-            <div style={{display:'flex',flexDirection:'column',gap:4}}>
-              <div className="mrol ai">Claude</div>
-              <div className="thn"><span/><span/><span/></div>
-            </div>
+            <div className="msg"><div className="msg-who">Claude</div>
+              <div className="bubble row"><Spinner /><span className="muted">Reading the report data…</span></div></div>
           )}
-          <div ref={bottomRef}/>
+          <div ref={bottom} />
         </div>
-        <div className="cir">
-          <input
-            className="ci" value={input}
-            onChange={e=>setInput(e.target.value)}
-            onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()}
-            placeholder="Ask about any market, size segment, construction cost, or strategy..."
-          />
-          <button className="btn bp" onClick={()=>send()} disabled={loading}>
-            {loading?'...':'Send'}
-          </button>
-        </div>
+        <form className="chat-input" onSubmit={e => { e.preventDefault(); send(); }}>
+          <input className="input" value={input} onChange={e => setInput(e.target.value)} disabled={!ready}
+                 placeholder="Ask about any market, metric or comparison…" aria-label="Your question" />
+          <button className="btn primary" disabled={loading || !input.trim() || !ready}>Send</button>
+        </form>
       </div>
     </div>
   );

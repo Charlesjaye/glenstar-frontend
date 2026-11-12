@@ -1,188 +1,125 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { getJSON } from '../lib/api';
-import { f, clr } from '../lib/format';
+import { useLoad } from '../lib/hooks';
+import { sortValue, toneClass, plural } from '../lib/format';
+import Fig from '../components/Fig';
+import { Empty, ErrorState, Icon, Link, Loading, QuarterChip, useApp } from '../components/ui';
 
-const SIZE_KEYS = {
-  all: { vac:'vacancy_rate',   rent:'asking_rent_psf',  cost:'construction_cost_psf', abs:'ytd_absorption_msf' },
-  s1:  { vac:'vac_0_100k',     rent:'rent_0_100k',      cost:'cost_0_100k',           abs:'abs_0_100k' },
-  s2:  { vac:'vac_100_250k',   rent:'rent_100_250k',    cost:'cost_100_250k',         abs:'abs_100_250k' },
-  s3:  { vac:'vac_250_500k',   rent:'rent_250_500k',    cost:'cost_250_500k',         abs:'abs_250_500k' },
-  s4:  { vac:'vac_500_750k',   rent:'rent_500_750k',    cost:'cost_500_750k',         abs:'abs_500_750k' },
-  s5:  { vac:'vac_750k_plus',  rent:'rent_750k_plus',   cost:'cost_750k_plus',        abs:'abs_750k_plus' },
-};
-
-const SIZE_LABELS = {
-  all:'All sizes', s1:'0–100K SF', s2:'100K–250K SF',
-  s3:'250K–500K SF', s4:'500K–750K SF', s5:'750K SF+',
-};
-
-const SIZE_DESC = {
-  all:'Blended metrics across all building sizes · Construction costs vary significantly by size',
-  s1:'0–100,000 SF — Small-bay & flex. Highest rent and construction cost per SF. Lowest vacancy.',
-  s2:'100,000–250,000 SF — Mid-bay distribution. Most efficient cost point. Broadest tenant demand.',
-  s3:'250,000–500,000 SF — Cross-dock & regional distribution. Monitor pipeline carefully.',
-  s4:'500,000–750,000 SF — Large regional DCs. Tenant pool narrows. Avoid spec in oversupplied markets.',
-  s5:'750,000 SF+ — Mega-DCs. Build-to-suit only is the prudent 2026 strategy.',
+const SHORT = {
+  vacancy_rate: 'Vacancy', asking_rent: 'Asking rent', net_absorption_qtr: 'Net absorption (qtr)',
+  net_absorption_ytd: 'Net absorption (YTD)', under_construction: 'Under construction', rent_growth_yoy: 'Rent growth YoY',
+  availability_rate: 'Availability',
 };
 
 export default function MarketsPage() {
-  const [markets, setMarkets] = useState([]);
-  const [thesis,  setThesis]  = useState(null);
-  const [size,    setSize]    = useState('all');
-  const [search,  setSearch]  = useState('');
-  const [region,  setRegion]  = useState('All');
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState(null);
+  const { openMarket, stats } = useApp();
+  const { data, error, loading, reload } = useLoad(() => getJSON('/api/markets'), []);
+  const [search, setSearch] = useState('');
+  const [region, setRegion] = useState('All');
+  const [onlyCurrent, setOnlyCurrent] = useState(false);
+  const [sort, setSort] = useState({ key: 'market', dir: 1 });
 
-  useEffect(() => {
-    Promise.all([
-      getJSON('/api/markets/summary'),
-      getJSON('/api/thesis/current').catch(() => null), // scores are optional
-    ]).then(([mkts, th]) => {
-      setMarkets(Array.isArray(mkts) ? mkts : []);
-      if (th) setThesis(th);
-    }).catch(err => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+  const markets = useMemo(() => (data ? data.markets : []), [data]);
+  const regions = useMemo(() => ['All', ...Array.from(new Set(markets.map(m => m.region).filter(Boolean))).sort()], [markets]);
 
-  const scoreMap = {};
-  const tierMap  = {};
-  (thesis?.rankings || []).forEach(r => { scoreMap[r.market] = r.score; tierMap[r.market] = r.tier; });
+  // Show a column only if at least one market has that metric.
+  const columns = useMemo(() => {
+    if (!data) return [];
+    return data.headline_metrics.filter(k => markets.some(m => m.metrics[k]));
+  }, [data, markets]);
 
-  const keys = SIZE_KEYS[size];
-  const regions = ['All', ...new Set(markets.map(m => m.region).filter(Boolean).sort())];
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = markets
+      .filter(m => region === 'All' || m.region === region)
+      .filter(m => !onlyCurrent || m.is_current)
+      .filter(m => !q || m.market.toLowerCase().includes(q));
+    const value = m => (sort.key === 'market' ? m.market : sort.key === 'quarter' ? -m.quarters_behind : sortValue(m.metrics[sort.key]));
+    return list.sort((a, b) => {
+      const x = value(a), y = value(b);
+      if (x == null && y == null) return a.market.localeCompare(b.market);
+      if (x == null) return 1;                    // markets without the figure always sort last
+      if (y == null) return -1;
+      return (typeof x === 'string' ? x.localeCompare(y) : x - y) * sort.dir;
+    });
+  }, [markets, region, onlyCurrent, search, sort]);
 
-  const getMetric = (m, segKey, fallbackKey) => {
-    const v = m[segKey];
-    if (v != null) return v;
-    if (size !== 'all') return m[fallbackKey] ?? null;
-    return null;
-  };
+  if (loading) return <Loading rows={8} />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
+  if (!markets.length) {
+    return (
+      <div className="card">
+        <Empty icon="markets" title="No market data yet"
+               action={<Link to="/data" className="btn primary"><Icon name="upload" />Add reports</Link>}>
+          Markets appear here as soon as a broker report for them has been added and checked.
+        </Empty>
+      </div>
+    );
+  }
 
-  let rows = markets
-    .filter(m => m.vacancy_rate != null || m.asking_rent_psf != null)
-    .filter(m => region === 'All' || m.region === region)
-    .filter(m => !search || m.market.toLowerCase().includes(search.toLowerCase()))
-    .map(m => ({
-      ...m,
-      score: scoreMap[m.market] ?? null,
-      tier:  tierMap[m.market]  ?? null,
-      _vac:  getMetric(m, keys.vac,  'vacancy_rate'),
-      _rent: getMetric(m, keys.rent, 'asking_rent_psf'),
-      _cost: getMetric(m, keys.cost, 'construction_cost_psf'),
-      _abs:  getMetric(m, keys.abs,  'ytd_absorption_msf'),
-    }));
-
-  const tierCls = { Primary:'bpr', Secondary:'bse', Caution:'bca', Avoid:'bav' };
-  const avgVac  = rows.filter(r=>r._vac!=null).reduce((s,r,_,a)=>s+r._vac/a.length,0);
-  const avgRent = rows.filter(r=>r._rent!=null).reduce((s,r,_,a)=>s+r._rent/a.length,0);
+  const th = (key, label, left) => (
+    <th key={key} className={`sortable ${left ? 'l' : ''}`} onClick={() => setSort(s => ({ key, dir: s.key === key ? -s.dir : (key === 'market' ? 1 : -1) }))}
+        aria-sort={sort.key === key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
+      {label}{sort.key === key && <span className="arrow">{sort.dir > 0 ? '↑' : '↓'}</span>}
+    </th>
+  );
+  const stale = markets.filter(m => !m.is_current).length;
 
   return (
-    <>
-      <div className="mrow">
-        <div className="mc"><div className="mcl">Markets with data</div><div className="mcv">{rows.length}</div><div className="mcc nu">Verified sources only</div></div>
-        <div className="mc"><div className="mcl">Avg vacancy</div><div className="mcv">{rows.filter(r=>r._vac!=null).length>0 ? f.pct(avgVac) : 'N/A'}</div><div className="mcc nu">{SIZE_LABELS[size]}</div></div>
-        <div className="mc"><div className="mcl">Avg asking rent</div><div className="mcv" style={{fontSize:18,marginTop:4}}>{rows.filter(r=>r._rent!=null).length>0 ? `$${avgRent.toFixed(2)}` : 'N/A'}</div><div className="mcc nu">Per SF / year</div></div>
-        <div className="mc"><div className="mcl">Size segment</div><div className="mcv" style={{fontSize:14,marginTop:4}}>{SIZE_LABELS[size]}</div><div className="mcc nu">Click tabs to filter</div></div>
+    <div className="stack">
+      <div className="row wrap">
+        <div style={{ position: 'relative' }}>
+          <Icon name="search" size={15} style={{ position: 'absolute', left: 11, top: 10.5, color: 'var(--text-3)' }} />
+          <input className="input" style={{ paddingLeft: 32, width: 220 }} placeholder="Search markets" value={search}
+                 onChange={e => setSearch(e.target.value)} aria-label="Search markets" />
+        </div>
+        <div className="seg">
+          {regions.map(r => <button key={r} className={region === r ? 'on' : ''} onClick={() => setRegion(r)}>{r}</button>)}
+        </div>
+        <label className="row muted" style={{ gap: 7, fontSize: 13, cursor: 'pointer' }}>
+          <input type="checkbox" checked={onlyCurrent} onChange={e => setOnlyCurrent(e.target.checked)} />
+          Only {data.expected_quarter}
+        </label>
+        <span className="grow" />
+        <span className="dim" style={{ fontSize: 12.5 }}>
+          {plural(rows.length, 'market')}{stale > 0 && stats ? ` · ${stale} on an older quarter` : ''}
+        </span>
       </div>
 
-      <div className="panel">
-        <div className="ph">
-          <span className="pt">Industrial market analytics — {rows.length} verified markets</span>
-          <span className="badge bl">{SIZE_LABELS[size]}</span>
-        </div>
-        <div className="size-tabs">
-          {Object.entries(SIZE_LABELS).map(([k,v]) => (
-            <button key={k} className={`stab ${size===k?'on':''}`} onClick={()=>setSize(k)}>{v}</button>
-          ))}
-        </div>
-        <div className="size-desc">{SIZE_DESC[size]}</div>
-
-        <div style={{padding:'8px 16px',borderBottom:'1px solid var(--border)',display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-          <input
-            value={search}
-            onChange={e=>setSearch(e.target.value)}
-            placeholder="Search markets..."
-            style={{background:'var(--surf2)',border:'1px solid var(--border2)',borderRadius:5,padding:'6px 11px',color:'var(--text)',fontSize:12,outline:'none',width:180,fontFamily:'Inter,sans-serif'}}
-          />
-          <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
-            {regions.map(r=>(
-              <button key={r} className={`btn bsm ${region===r?'bp':'bg'}`} onClick={()=>setRegion(r)}>{r}</button>
+      <div className="card table-wrap">
+        <table className="table">
+          <thead><tr>
+            {th('market', 'Market', true)}
+            {th('quarter', 'Quarter', true)}
+            <th className="l">Source</th>
+            {columns.map(k => th(k, SHORT[k] || k))}
+            <th />
+          </tr></thead>
+          <tbody>
+            {rows.map(m => (
+              <tr key={m.market} className="click" onClick={() => openMarket(m.market)}>
+                <td className="l">
+                  <div className="strong">{m.market}</div>
+                  <div className="dim" style={{ fontSize: 12 }}>{m.region || '—'}</div>
+                </td>
+                <td className="l"><QuarterChip quarter={m.quarter} behind={m.quarters_behind} /></td>
+                <td className="l muted">{m.primary_source}{m.sources.length > 1 ? <span className="dim"> +{m.sources.length - 1}</span> : null}</td>
+                {columns.map(k => (
+                  <td key={k} className={toneClass(k, m.metrics[k])}><Fig v={m.metrics[k]} /></td>
+                ))}
+                <td><Icon name="chevron" size={16} style={{ color: 'var(--text-3)' }} /></td>
+              </tr>
             ))}
-          </div>
-          <span style={{marginLeft:'auto',fontFamily:"'JetBrains Mono',monospace",fontSize:9,color:'var(--dim)'}}>
-            {rows.length} markets · click ↗ for source report
-          </span>
-        </div>
-
-        {loading ? (
-          <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>Loading market data...</div>
-        ) : error ? (
-          <div style={{padding:40,textAlign:'center',color:'var(--danger)'}}>Could not load market data: {error}</div>
-        ) : (
-          <div style={{overflowX:'auto'}}>
-            <table className="dtbl" style={{minWidth:980}}>
-              <thead><tr>
-                <th style={{textAlign:'left'}}>Market ↗</th>
-                <th style={{textAlign:'left'}}>Region</th>
-                <th>Score</th>
-                <th style={{textAlign:'left'}}>Tier</th>
-                <th>Vacancy</th><th>Avail.</th><th>Occ.</th>
-                <th>Absorption</th><th>Rent $/SF</th><th>Rent Chg</th>
-                <th>Cap Rate</th><th>Pipeline</th>
-                <th title="Construction cost varies by building size">Build $/SF</th>
-                <th>Quarter</th>
-              </tr></thead>
-              <tbody>
-                {rows.length === 0
-                  ? <tr><td colSpan={14} style={{textAlign:'center',padding:30,color:'var(--dim)'}}>No markets match</td></tr>
-                  : rows.map((m,i) => (
-                    <tr key={i}>
-                      <td>
-                        {m.report_url
-                          ? <a href={m.report_url} target="_blank" rel="noreferrer" style={{color:'var(--text)',textDecoration:'none',fontWeight:600}}>{m.market} <span style={{color:'var(--orange)',fontSize:10}}>↗</span></a>
-                          : <span style={{fontWeight:600}}>{m.market}</span>
-                        }
-                      </td>
-                      <td style={{fontSize:10,color:'var(--muted)'}}>{m.region||'N/A'}</td>
-                      <td>
-                        {m.score!=null
-                          ? <div style={{display:'flex',alignItems:'center',gap:4,justifyContent:'flex-end'}}>
-                              <div style={{width:34,height:3,background:'var(--border)',borderRadius:2,overflow:'hidden'}}>
-                                <div style={{height:3,width:m.score+'%',background:clr.sc(m.score),borderRadius:2}}/>
-                              </div>
-                              <span className="mono" style={{color:clr.sc(m.score)}}>{m.score}</span>
-                            </div>
-                          : <span className="mono" style={{color:'var(--dim)'}}>N/A</span>
-                        }
-                      </td>
-                      <td style={{textAlign:'left'}}>
-                        {m.tier ? <span className={`badge ${tierCls[m.tier]||'bse'}`} style={{fontSize:8}}>{m.tier}</span> : <span style={{color:'var(--dim)',fontSize:10}}>N/A</span>}
-                      </td>
-                      <td className="mono" style={{color:clr.vac(m._vac),fontWeight:600}}>{f.pct(m._vac)}</td>
-                      <td className="mono">{f.pct(m.availability_rate)}</td>
-                      <td className="mono">{f.pct(m.occupancy_rate)}</td>
-                      <td className="mono" style={{color:clr.abs(m._abs)}}>{f.msf(m._abs)}</td>
-                      <td className="mono" style={{color:'var(--orange)',fontWeight:600}}>{f.rent(m._rent)}</td>
-                      <td className="mono" style={{color:clr.rg(m.rent_growth_pct)}}>{f.rg(m.rent_growth_pct)}</td>
-                      <td className="mono">{m.cap_rate!=null ? m.cap_rate+'%' : 'N/A'}</td>
-                      <td className="mono">{f.msf(m.pipeline_msf)}</td>
-                      <td className="mono" style={{color:clr.cost(m._cost)}}>{f.cost(m._cost)}</td>
-                      <td><span className={`badge ${m.quarter&&m.quarter.includes('2026')?'bpr':'bca'}`} style={{fontSize:8}}>{m.quarter||'N/A'}</span></td>
-                    </tr>
-                  ))
-                }
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div style={{padding:'9px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:16,flexWrap:'wrap'}}>
-          <span style={{fontSize:10,color:'var(--dim)'}}>Vacancy: <span style={{color:'var(--good)'}}>■</span>&lt;7% &nbsp;<span style={{color:'var(--warn)'}}>■</span>7-10% &nbsp;<span style={{color:'var(--danger)'}}>■</span>&gt;10%</span>
-          <span style={{fontSize:10,color:'var(--dim)'}}>Build $/SF: small-bay highest, big-box lowest · <span style={{color:'var(--good)'}}>■</span>&lt;$70 &nbsp;<span style={{color:'var(--danger)'}}>■</span>&gt;$120</span>
-          <span style={{fontSize:10,color:'var(--dim)'}}>N/A = not reported · markets without data excluded</span>
-        </div>
+            {rows.length === 0 && (
+              <tr><td colSpan={columns.length + 4} className="l muted" style={{ padding: 28, textAlign: 'center' }}>No markets match these filters.</td></tr>
+            )}
+          </tbody>
+        </table>
       </div>
-    </>
+      <div className="dim" style={{ fontSize: 12.5 }}>
+        Click a number to see the report, page and sentence it came from. “—” means the broker did not publish that
+        figure; nothing is estimated. Brokers define markets differently, so compare across brokers with care.
+      </div>
+    </div>
   );
 }

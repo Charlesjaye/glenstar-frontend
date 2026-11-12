@@ -1,96 +1,110 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { getJSON } from '../lib/api';
-import { f, clr } from '../lib/format';
+import { useLoad } from '../lib/hooks';
+import { fmtDate, plural } from '../lib/format';
+import { DocStatusChip, Empty, ErrorState, Icon, Link, Loading, ORIGIN_LABEL, useApp } from '../components/ui';
+
+const qIndex = q => (q ? parseInt(q.slice(3), 10) * 4 + parseInt(q[1], 10) : -1);
 
 export default function ReportsPage() {
-  const [reports, setReports] = useState([]);
-  const [filter,  setFilter]  = useState('all');
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState(null);
+  const { navigate, stats } = useApp();
+  const { data, error, loading, reload } = useLoad(() => getJSON('/api/documents'), [], { interval: 20000 });
+  const [quarter, setQuarter] = useState('all');
+  const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    getJSON('/api/reports')
-      .then(d => setReports(Array.isArray(d) ? d : []))
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+  const docs = useMemo(() => data || [], [data]);
+  const used = docs.filter(d => d.quarter && ['ready', 'needs_review'].includes(d.status));
+  const quarters = useMemo(
+    () => Array.from(new Set(used.map(d => d.quarter))).sort((a, b) => qIndex(b) - qIndex(a)), [used]);
 
-  const filtered  = filter==='all' ? reports : reports.filter(r=>r.source===filter);
-  const sources   = ['all', ...new Set(reports.map(r=>r.source).filter(Boolean).sort())];
-  const srcCls    = {'JLL':'bjll','CBRE':'bcb','C&W':'bcw','Avison Young':'bay','Newmark':'bnm','Colliers':'bcl'};
-  const qBadge    = q => q&&q.includes('2026') ? 'bpr' : q&&q.includes('Q4 2025') ? 'bca' : 'bse';
+  if (loading && !data) return <Loading rows={8} />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
+  if (!docs.length) {
+    return (
+      <div className="card">
+        <Empty icon="library" title="The library is empty"
+               action={<Link to="/data" className="btn primary"><Icon name="upload" />Add reports</Link>}>
+          Every report you add — and every one the scanner finds — is kept here, filed by quarter, with the original
+          PDF and the figures read from it.
+        </Empty>
+      </div>
+    );
+  }
+
+  const q = search.trim().toLowerCase();
+  const match = d => !q || [d.title, d.filename, d.source, ...(d.markets || [])].filter(Boolean).some(s => s.toLowerCase().includes(q));
+  const shown = docs.filter(match).filter(d => {
+    if (quarter === 'all') return true;
+    if (quarter === 'unused') return !['ready', 'needs_review'].includes(d.status);
+    return d.quarter === quarter && ['ready', 'needs_review'].includes(d.status);
+  });
+  const unused = docs.filter(d => !['ready', 'needs_review'].includes(d.status)).length;
+  const groups = quarter === 'all'
+    ? [...quarters.map(k => [k, shown.filter(d => d.quarter === k && ['ready', 'needs_review'].includes(d.status))]),
+       ['Not used', shown.filter(d => !['ready', 'needs_review'].includes(d.status))]]
+    : [[quarter === 'unused' ? 'Not used' : quarter, shown]];
 
   return (
-    <div className="panel">
-      <div className="ph">
-        <span className="pt">Industrial report library — {reports.length} reports · click market name ↗ to open source report</span>
-        <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
-          {sources.map(s=>(
-            <button key={s} className={`btn bsm ${filter===s?'bp':'bg'}`} onClick={()=>setFilter(s)}>
-              {s==='all'?'All sources':s}
+    <div className="stack">
+      <div className="row wrap">
+        <div style={{ position: 'relative' }}>
+          <Icon name="search" size={15} style={{ position: 'absolute', left: 11, top: 10.5, color: 'var(--text-3)' }} />
+          <input className="input" style={{ paddingLeft: 32, width: 240 }} placeholder="Search by market, broker or title"
+                 value={search} onChange={e => setSearch(e.target.value)} aria-label="Search reports" />
+        </div>
+        <div className="seg">
+          <button className={quarter === 'all' ? 'on' : ''} onClick={() => setQuarter('all')}>All<span className="count">{docs.length}</span></button>
+          {quarters.map(k => (
+            <button key={k} className={quarter === k ? 'on' : ''} onClick={() => setQuarter(k)}>
+              {k}{stats && k === stats.expected_quarter ? ' · latest' : ''}<span className="count">{used.filter(d => d.quarter === k).length}</span>
             </button>
           ))}
+          {unused > 0 && <button className={quarter === 'unused' ? 'on' : ''} onClick={() => setQuarter('unused')}>Not used<span className="count">{unused}</span></button>}
         </div>
+        <span className="grow" />
+        <Link to="/data" className="btn primary"><Icon name="upload" />Add reports</Link>
       </div>
 
-      {loading ? (
-        <div style={{padding:40,textAlign:'center',color:'var(--muted)'}}>Loading reports...</div>
-      ) : error ? (
-        <div style={{padding:40,textAlign:'center',color:'var(--danger)'}}>Could not load reports: {error}</div>
-      ) : (
-        <div style={{overflowX:'auto'}}>
-          <table className="dtbl" style={{minWidth:940}}>
-            <thead><tr>
-              <th style={{textAlign:'left'}}>Source</th>
-              <th style={{textAlign:'left'}}>Market — click ↗ to open</th>
-              <th style={{textAlign:'left'}}>Region</th>
-              <th style={{textAlign:'left'}}>Quarter</th>
-              <th>Vacancy</th><th>Occ.</th>
-              <th>Rent $/SF</th><th>Rent Chg</th>
-              <th>YTD Abs.</th><th>Cap Rate</th>
-              <th>Build $/SF</th><th>Data %</th>
-            </tr></thead>
-            <tbody>
-              {filtered.length===0
-                ? <tr><td colSpan={12} style={{textAlign:'center',padding:30,color:'var(--dim)'}}>No reports found</td></tr>
-                : filtered.map((r,i)=>(
-                  <tr key={i}>
-                    <td style={{textAlign:'left'}}><span className={`badge ${srcCls[r.source]||'bjll'}`}>{r.source}</span></td>
-                    <td style={{fontWeight:600}}>
-                      {r.report_url
-                        ? <a href={r.report_url} target="_blank" rel="noreferrer" style={{color:'var(--text)',textDecoration:'none'}} title="Open original broker report">
-                            {r.market} <span style={{color:'var(--orange)',fontSize:11}}>↗</span>
-                          </a>
-                        : r.market
-                      }
+      {groups.filter(([, list]) => list.length).map(([label, list]) => (
+        <div className="card" key={label}>
+          <div className="card-head">
+            <div className="card-title">{label}</div>
+            <div className="card-sub">{plural(list.length, 'report')}</div>
+          </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr>
+                <th className="l">Report</th><th className="l">Broker</th><th className="l">Markets</th>
+                <th className="l">Added</th><th>Figures</th><th className="l">Status</th>
+              </tr></thead>
+              <tbody>
+                {list.map(d => (
+                  <tr key={d.id} className="click" onClick={() => navigate(`/reports/${d.id}`)}>
+                    <td className="l wrap" style={{ maxWidth: 380 }}>
+                      <div className="strong">{d.title || d.filename}</div>
+                      {(d.status === 'failed' || d.status === 'rejected') && d.error
+                        ? <div className="bad" style={{ fontSize: 12.5 }}>{d.error}</div>
+                        : <div className="dim" style={{ fontSize: 12 }}>{d.filename}</div>}
                     </td>
-                    <td style={{textAlign:'left',fontSize:10,color:'var(--muted)'}}>{r.region||'N/A'}</td>
-                    <td style={{textAlign:'left'}}><span className={`badge ${qBadge(r.quarter)}`} style={{fontSize:8}}>{r.quarter||'N/A'}</span></td>
-                    <td className="mono" style={{color:clr.vac(r.vacancy_rate),fontWeight:600}}>{f.pct(r.vacancy_rate)}</td>
-                    <td className="mono">{f.pct(r.occupancy_rate)}</td>
-                    <td className="mono" style={{color:'var(--orange)',fontWeight:600}}>{f.rent(r.asking_rent_psf)}</td>
-                    <td className="mono" style={{color:clr.rg(r.rent_growth_pct)}}>{f.rg(r.rent_growth_pct)}</td>
-                    <td className="mono" style={{color:clr.abs(r.ytd_absorption_msf)}}>{f.msf(r.ytd_absorption_msf)}</td>
-                    <td className="mono">{r.cap_rate!=null?r.cap_rate+'%':'N/A'}</td>
-                    <td className="mono" style={{color:clr.cost(r.construction_cost_psf)}}>{f.cost(r.construction_cost_psf)}</td>
-                    <td>
-                      <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:9,
-                        color:(r.data_completeness_pct||0)>=80?'var(--good)':(r.data_completeness_pct||0)>=60?'var(--warn)':'var(--danger)'}}>
-                        {r.data_completeness_pct!=null?r.data_completeness_pct+'%':'N/A'}
-                      </span>
+                    <td className="l">{d.source || <span className="na">—</span>}</td>
+                    <td className="l muted">
+                      {!d.markets || !d.markets.length ? <span className="na">—</span>
+                        : d.markets.length <= 2 ? d.markets.join(', ') : `${d.markets.length} markets`}
                     </td>
+                    <td className="l muted">{fmtDate(d.created_at)}<div className="dim" style={{ fontSize: 12 }}>{ORIGIN_LABEL[d.origin] || d.origin}</div></td>
+                    <td className="num">
+                      {d.value_counts.published}
+                      {d.value_counts.needs_review > 0 && <span className="warn"> +{d.value_counts.needs_review} to check</span>}
+                    </td>
+                    <td className="l"><DocStatusChip status={d.status} /></td>
                   </tr>
-                ))
-              }
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      )}
-
-      <div style={{padding:'10px 14px',borderTop:'1px solid var(--border)',display:'flex',gap:16,flexWrap:'wrap'}}>
-        <span style={{fontSize:10,color:'var(--dim)'}}>↗ Click any market name to open the original broker report in a new tab</span>
-        <span style={{fontSize:10,color:'var(--dim)',marginLeft:'auto'}}>N/A = metric not reported in source document · never estimated or fabricated</span>
-      </div>
+      ))}
+      {shown.length === 0 && <div className="card card-body muted">No reports match.</div>}
     </div>
   );
 }
