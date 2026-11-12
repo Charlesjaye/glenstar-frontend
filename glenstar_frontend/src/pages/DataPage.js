@@ -178,7 +178,16 @@ export default function DataPage() {
               {m.targets.length === 0 && <span className="dim" style={{ fontSize: 12.5 }}>Search the broker's research page for “{m.market} industrial {quarter}”.</span>}
             </div>
             <div className="dim cov-reason">
-              {m.search ? <span title={m.search.detail}>Web search {timeAgo(m.search.at)}: {m.search.status === 'failed' ? 'failed' : 'nothing usable found'}</span> : reason(m)}
+              {!m.search ? reason(m) : (
+                <span title={m.search.detail}>
+                  Web search {timeAgo(m.search.at)}:{' '}
+                  {m.search.status === 'failed' ? 'could not run'
+                    : (m.search.links || []).length ? 'found a link it could not download' : 'no report found yet'}
+                  {(m.search.links || []).slice(0, 1).map(l => (
+                    <a key={l.url} className="accent" href={l.url} target="_blank" rel="noreferrer" style={{ marginLeft: 6 }} title={l.result}>Open it ↗</a>
+                  ))}
+                </span>
+              )}
             </div>
           </div>
         ))}

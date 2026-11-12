@@ -271,3 +271,31 @@ export function QuarterChip({ quarter, behind }) {
     </Chip>
   );
 }
+
+
+// Keeps one broken page from blanking the whole site.
+export class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error) {
+    console.error('Page failed to render:', error);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <Banner tone="bad" title="This page hit a problem"
+              action={<button className="btn sm" onClick={() => window.location.reload()}><Icon name="refresh" />Reload</button>}>
+        Something on this page could not be displayed. The rest of the site still works — try reloading. If it keeps
+        happening, the site and its data service may be on different versions; redeploy both.
+      </Banner>
+    );
+  }
+}
