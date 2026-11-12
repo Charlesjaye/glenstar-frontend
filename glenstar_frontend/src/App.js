@@ -1,131 +1,226 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
-import ThesisPage      from './pages/ThesisPage';
-import MarketsPage     from './pages/MarketsPage';
-import ChatPage        from './pages/ChatPage';
-import ReportsPage     from './pages/ReportsPage';
-import MonitorPage     from './pages/MonitorPage';
+import OverviewPage     from './pages/OverviewPage';
+import MarketsPage      from './pages/MarketsPage';
 import UnderwritingPage from './pages/UnderwritingPage';
+import ChatPage         from './pages/ChatPage';
+import DataPage         from './pages/DataPage';
+import ReportsPage      from './pages/ReportsPage';
+import ReportPage       from './pages/ReportPage';
+import SourcesPage      from './pages/SourcesPage';
+import MarketDetail     from './components/MarketDetail';
+import { AppContext, Banner, Drawer, Icon, Loading, Modal, useToasts } from './components/ui';
+import { getJSON, onUnauthorized, postJSON, setAdminToken } from './lib/api';
+import { useRoute, linkHandler } from './lib/router';
 
-const API = process.env.REACT_APP_API_URL || '';
+const ROUTES = [
+  { id: 'overview',     path: '/' },
+  { id: 'markets',      path: '/markets' },
+  { id: 'underwriting', path: '/underwriting' },
+  { id: 'chat',         path: '/chat' },
+  { id: 'data',         path: '/data' },
+  { id: 'reports',      path: '/reports' },
+  { id: 'report',       path: '/reports/:id' },
+  { id: 'sources',      path: '/sources' },
+];
+
+const NAV = [
+  { group: 'Analysis' },
+  { id: 'overview',     path: '/',             label: 'Overview',        icon: 'overview' },
+  { id: 'markets',      path: '/markets',      label: 'Markets',         icon: 'markets' },
+  { id: 'underwriting', path: '/underwriting', label: 'Underwriting',    icon: 'underwriting' },
+  { id: 'chat',         path: '/chat',         label: 'Ask Claude',      icon: 'chat' },
+  { group: 'Data' },
+  { id: 'data',         path: '/data',         label: 'Add reports',     icon: 'upload' },
+  { id: 'reports',      path: '/reports',      label: 'Report library',  icon: 'library' },
+  { id: 'sources',      path: '/sources',      label: 'Broker sources',  icon: 'sources' },
+];
+
+const META = {
+  overview:     { title: 'Overview',            sub: 'Where the industrial market stands, from the broker reports on file' },
+  markets:      { title: 'Markets',             sub: 'Every figure links to the report, page and sentence it came from' },
+  underwriting: { title: 'Underwriting inputs', sub: 'Broker-published figures for a market, ready for your model' },
+  chat:         { title: 'Ask Claude',          sub: 'Questions answered from the report data, with sources' },
+  data:         { title: 'Add reports',         sub: 'Drop in broker PDFs and see which markets still need one' },
+  reports:      { title: 'Report library',      sub: 'Every report on file, by quarter' },
+  report:       { title: 'Report',              sub: 'The original document and the figures read from it' },
+  sources:      { title: 'Broker sources',      sub: 'The pages the site checks for new reports, and what happened' },
+};
+
+function PasscodeModal({ onSubmit, onCancel }) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async e => {
+    e.preventDefault();
+    setBusy(true);
+    const ok = await onSubmit(value);
+    setBusy(false);
+    if (!ok) setError('That passcode was not accepted.');
+  };
+  return (
+    <Modal title="Enter the admin passcode" onClose={onCancel}>
+      <p className="muted">Adding or changing report data is protected. The passcode is remembered on this device.</p>
+      <form onSubmit={submit} style={{ marginTop: 16 }}>
+        <input className="input" style={{ width: '100%' }} type="password" autoFocus value={value}
+               onChange={e => { setValue(e.target.value); setError(''); }} aria-label="Admin passcode" />
+        {error && <div className="bad" style={{ fontSize: 13, marginTop: 8 }}>{error}</div>}
+        <div className="row" style={{ justifyContent: 'flex-end', marginTop: 18 }}>
+          <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+          <button className="btn primary" disabled={busy || !value}>Continue</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
 export default function App() {
-  const [page,  setPage]  = useState('thesis');
+  const [route, navigate] = useRoute(ROUTES);
   const [stats, setStats] = useState(null);
-  const [toast, setToast] = useState(null);
+  const [offline, setOffline] = useState(false);
+  const [toast, toastView] = useToasts();
+  const [marketName, setMarketName] = useState(null);
+  const [marketData, setMarketData] = useState(null);
+  const [passcode, setPasscode] = useState(null);       // { resolve } while the modal is open
 
-  const loadStats = () => {
-    fetch(`${API}/api/stats`).then(r => r.json()).then(setStats).catch(() => {});
-  };
-
-  useEffect(() => {
-    loadStats();
-    const iv = setInterval(loadStats, 5 * 60 * 1000);
-    return () => clearInterval(iv);
+  const reloadStats = useCallback(() => {
+    getJSON('/api/stats').then(s => { setStats(s); setOffline(false); }).catch(() => setOffline(true));
   }, []);
 
-  const notify = (msg, type = 'info') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 5000);
-  };
+  // Refresh the headline numbers regularly — faster while reports are being read.
+  const busy = stats && stats.processing_count > 0;
+  useEffect(() => {
+    reloadStats();
+    const id = setInterval(reloadStats, busy ? 4000 : 30000);
+    return () => clearInterval(id);
+  }, [reloadStats, busy]);
 
-  const triggerScan = async () => {
-    notify('Scanning all 6 industrial report sources...', 'info');
+  // When the backend asks for the admin passcode, show the modal and retry the request.
+  const passcodeRef = useRef(null);
+  useEffect(() => {
+    onUnauthorized(() => {
+      if (passcodeRef.current) return passcodeRef.current;
+      passcodeRef.current = new Promise(resolve => setPasscode({ resolve }));
+      return passcodeRef.current;
+    });
+    return () => onUnauthorized(null);
+  }, []);
+  const closePasscode = result => {
+    if (passcode) passcode.resolve(result);
+    passcodeRef.current = null;
+    setPasscode(null);
+  };
+  const submitPasscode = async value => {
+    setAdminToken(value);
     try {
-      await fetch(`${API}/api/monitor/scan`, { method: 'POST' });
-      loadStats();
-      notify('Scan complete.', 'success');
-    } catch { notify('Scan failed — check backend is running.', 'error'); }
+      await postJSON('/api/auth/check', undefined, { retry: false });
+      closePasscode(true);
+      return true;
+    } catch {
+      setAdminToken('');
+      return false;
+    }
   };
 
-  const triggerThesis = async () => {
-    notify('Regenerating investment thesis with Claude AI...', 'info');
-    try {
-      await fetch(`${API}/api/thesis/regenerate`, { method: 'POST' });
-      loadStats();
-      notify('New thesis generated.', 'success');
-    } catch { notify('Regeneration failed.', 'error'); }
-  };
+  const openMarket = useCallback(name => {
+    setMarketName(name);
+    setMarketData(null);
+    Promise.all([getJSON('/api/markets'), getJSON('/api/thesis/current').catch(() => null)])
+      .then(([snapshot, thesis]) => setMarketData({ snapshot, thesis }))
+      .catch(err => { toast(err.message, 'error'); setMarketName(null); });
+  }, [toast]);
 
-  const nav = [
-    { id: 'thesis',       label: 'Live Thesis',           icon: '◆', group: 'Analysis' },
-    { id: 'markets',      label: 'Market Analytics',      icon: '◈', group: null },
-    { id: 'underwriting', label: 'Underwriting',          icon: '◉', group: null },
-    { id: 'chat',         label: 'Ask Claude',            icon: '◇', group: null },
-    { id: 'reports',      label: 'Report Library',        icon: '▣', group: 'Data' },
-    { id: 'monitor',      label: 'Source Monitor',        icon: '▷', group: null },
-  ];
+  useEffect(() => { setMarketName(null); }, [route.id, route.params.id]);
 
-  const meta = {
-    thesis:       { title: 'Live Investment Thesis',       sub: 'AI-generated · 6 brokerages · industrial only · auto-updates twice daily' },
-    markets:      { title: 'Market Analytics',             sub: 'Industrial fundamentals by building size · size-specific construction costs · verified data only' },
-    underwriting: { title: 'Underwriting Assumptions',     sub: '35 markets · Q1 2026 broker data · select market + building size to populate all assumptions' },
-    chat:         { title: 'Ask Claude',                   sub: 'AI-powered industrial market analysis grounded in verified broker data' },
-    reports:      { title: 'Report Library',               sub: 'Click any market name ↗ to open the original broker report' },
-    monitor:      { title: 'Source Monitor',               sub: 'Twice-daily scans at 6:00 AM and 6:00 PM · 6 brokerages · auto quarter detection' },
-  };
+  const page = route.id;
+  useEffect(() => { document.title = `${META[page].title} · Glenstar Intelligence`; }, [page]);
 
-  const quarter     = stats?.latest_quarter || stats?.thesis_quarter || '—';
-  const reportCount = stats?.real_data_count || stats?.report_count  || 0;
-  const apiReady    = stats?.api_key_configured;
+  const ctx = useMemo(() => ({ navigate, stats, reloadStats, toast, openMarket }),
+    [navigate, stats, reloadStats, toast, openMarket]);
+
+  const attention = stats ? stats.review_document_count : 0;
+  const drawerMarket = marketData && marketData.snapshot.markets.find(m => m.market === marketName);
+  const drawerRanking = drawerMarket && marketData.thesis && marketData.thesis.thesis
+    ? marketData.thesis.thesis.rankings.find(r => r.market === marketName) : null;
 
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="sidebar-logo">
-          <div className="logo-g">GLENSTAR</div>
-          <div className="logo-i">Intelligence</div>
-          <div className="logo-t">Industrial Market Platform</div>
-        </div>
-        <nav className="sidebar-nav">
-          {nav.map(item => (
-            <React.Fragment key={item.id}>
-              {item.group && <div className="nav-s">{item.group}</div>}
-              <div className={`ni ${page === item.id ? 'on' : ''}`} onClick={() => setPage(item.id)}>
-                <span className="ni-ico">{item.icon}</span>
+    <AppContext.Provider value={ctx}>
+      <div className="shell">
+        <aside className="sidebar">
+          <div className="brand">
+            <div className="brand-name">GLENSTAR</div>
+            <div className="brand-sub">Intelligence</div>
+          </div>
+          <nav className="nav" aria-label="Main">
+            {NAV.map((item, i) => item.group ? (
+              <div className="nav-group eyebrow" key={`g${i}`}>{item.group}</div>
+            ) : (
+              <a key={item.id} href={item.path} onClick={linkHandler(navigate, item.path)}
+                 className={`nav-item ${page === item.id || (item.id === 'reports' && page === 'report') ? 'on' : ''}`}
+                 aria-current={page === item.id ? 'page' : undefined}>
+                <Icon name={item.icon} />
                 <span>{item.label}</span>
+                {item.id === 'data' && attention > 0 && <span className="nav-badge" title="Reports waiting for your review">{attention}</span>}
+                {item.id === 'data' && attention === 0 && stats && stats.coverage.missing > 0 && (
+                  <span className="nav-badge quiet" title={`Markets without a ${stats.expected_quarter} report`}>{stats.coverage.missing}</span>
+                )}
+              </a>
+            ))}
+          </nav>
+          <div className="side-foot">
+            <div className="side-card">
+              <div className="eyebrow">Latest published quarter</div>
+              <div className="big">{stats ? stats.expected_quarter : '—'}</div>
+              <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
+                {offline ? <span className="bad">Backend unreachable</span>
+                  : stats ? `${stats.coverage.current} of ${stats.coverage.total} markets up to date` : 'Connecting…'}
               </div>
-            </React.Fragment>
-          ))}
-        </nav>
-        <div className="sidebar-footer">
-          <div className="live-pill">
-            <div className="live-dot" />
+            </div>
+          </div>
+        </aside>
+
+        <div className="main">
+          <header className="topbar">
             <div>
-              <div className="live-label">Live monitoring</div>
-              <div className="live-sub">{reportCount} reports · 6 brokerages</div>
+              <h1 className="page-title">{META[page].title}</h1>
+              <p className="page-sub">{META[page].sub}</p>
             </div>
-          </div>
+            {stats && stats.processing_count > 0 && (
+              <span className="chip accent"><span className="dot pulse" />Reading {stats.processing_count} report{stats.processing_count > 1 ? 's' : ''}…</span>
+            )}
+          </header>
+          <main className="content">
+            <div className="content-inner">
+              {offline && !stats && (
+                <div style={{ marginBottom: 16 }}>
+                  <Banner tone="bad" title="Cannot reach the backend">
+                    The data service is not responding. If it has been idle it may take a minute to wake up — this page
+                    will reconnect on its own.
+                  </Banner>
+                </div>
+              )}
+              {page === 'overview'     && <OverviewPage />}
+              {page === 'markets'      && <MarketsPage />}
+              {page === 'underwriting' && <UnderwritingPage />}
+              {page === 'chat'         && <ChatPage />}
+              {page === 'data'         && <DataPage />}
+              {page === 'reports'      && <ReportsPage />}
+              {page === 'report'       && <ReportPage id={route.params.id} search={route.search} />}
+              {page === 'sources'      && <SourcesPage />}
+            </div>
+          </main>
         </div>
-      </aside>
 
-      <div className="main">
-        <header className="topbar">
-          <div>
-            <h1 className="ptitle">{meta[page].title}</h1>
-            <p className="psub">{meta[page].sub}</p>
-          </div>
-          <div className="tbr">
-            <div className="tmeta">
-              <div style={{ color: 'var(--text)', fontWeight: 500 }}>{quarter} data</div>
-              <div style={{ color: 'var(--dim)' }}>{reportCount} verified reports · {apiReady ? 'AI active' : 'API key needed'}</div>
-            </div>
-            <button className="btn bg" onClick={triggerScan}>Scan sources</button>
-            <button className="btn bp" onClick={triggerThesis}>Regenerate thesis</button>
-          </div>
-        </header>
-
-        <main className="content">
-          {page === 'thesis'       && <ThesisPage       api={API} />}
-          {page === 'markets'      && <MarketsPage      api={API} />}
-          {page === 'underwriting' && <UnderwritingPage />}
-          {page === 'chat'         && <ChatPage         api={API} apiReady={apiReady} />}
-          {page === 'reports'      && <ReportsPage      api={API} />}
-          {page === 'monitor'      && <MonitorPage      api={API} onScan={triggerScan} stats={stats} />}
-        </main>
+        {marketName && (
+          <Drawer title={marketName} subtitle={drawerMarket ? drawerMarket.region : undefined} onClose={() => setMarketName(null)}>
+            {!marketData ? <Loading rows={5} />
+              : drawerMarket ? <MarketDetail market={drawerMarket} metricDefs={marketData.snapshot.metrics} ranking={drawerRanking} />
+                : <div className="muted">No published data for this market.</div>}
+          </Drawer>
+        )}
+        {passcode && <PasscodeModal onSubmit={submitPasscode} onCancel={() => closePasscode(false)} />}
+        {toastView}
       </div>
-
-      {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
-    </div>
+    </AppContext.Provider>
   );
 }
