@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { getJSON } from '../lib/api';
+import React, { useEffect, useState } from 'react';
+import { API_BASE, getJSON, postJSON } from '../lib/api';
 import { useLoad } from '../lib/hooks';
 import { plural, timeAgo } from '../lib/format';
 import UploadZone, { documentOutcome } from '../components/UploadZone';
-import { Banner, Chip, DocStatusChip, ErrorState, Icon, Link, Loading, useApp } from '../components/ui';
+import { Banner, Chip, DocStatusChip, ErrorState, Icon, Link, Loading, Spinner, useApp } from '../components/ui';
 
 // Why a broker page did not yield a report, in plain words.
 const RESULT = {
@@ -27,10 +27,31 @@ function reason(market) {
 }
 
 export default function DataPage() {
-  const { stats } = useApp();
+  const { stats, toast, reloadStats } = useApp();
   const cov = useLoad(() => getJSON('/api/coverage'), [], { interval: 15000 });
   const review = useLoad(() => getJSON('/api/documents?status=needs_review,failed'), [], { interval: 15000 });
   const [showCurrent, setShowCurrent] = useState(false);
+  const [starting, setStarting] = useState(false);
+
+  const job = stats ? stats.finder : null;
+  const searching = job && job.status === 'running';
+  // While a web search is running, keep the coverage list fresh.
+  useEffect(() => {
+    if (!searching) return undefined;
+    const id = setInterval(() => { cov.reload({ quiet: true }); reloadStats(); }, 5000);
+    return () => clearInterval(id);
+  }, [searching, cov, reloadStats]);
+
+  const searchWeb = async () => {
+    setStarting(true);
+    try {
+      const res = await postJSON('/api/finder', {});
+      toast(res.started ? `Searching the web for ${res.markets} missing market${res.markets === 1 ? '' : 's'}…`
+        : res.markets === 0 ? 'Nothing to search for — every market is covered.' : 'A search is already running.', 'info');
+      reloadStats();
+    } catch (err) { toast(err.message, 'error'); }
+    setStarting(false);
+  };
 
   const refresh = () => { cov.reload({ quiet: true }); review.reload({ quiet: true }); };
 
@@ -92,12 +113,24 @@ export default function DataPage() {
               have a report for it.
             </div>
           </div>
-          <div className="row">
+          <div className="row wrap">
             <Chip tone="good" dot>{counts.current} up to date</Chip>
             {counts.review > 0 && <Chip tone="warn" dot>{counts.review} in review</Chip>}
             <Chip dot>{counts.missing} needed</Chip>
+            {counts.missing > 0 && (
+              <button className="btn sm primary" onClick={searchWeb} disabled={starting || searching || (stats && !stats.api_key_configured)}
+                      title="Claude searches the web for each missing market's latest report PDF and files what it finds">
+                {starting || searching ? <Spinner /> : <Icon name="search" />}
+                {searching ? `Searching… ${job.done}/${job.total}` : 'Find missing reports on the web'}
+              </button>
+            )}
           </div>
         </div>
+        {searching && (
+          <div className="cov-hint" style={{ color: 'var(--accent)' }}>
+            <Spinner />Searching for {job.current}… {job.found > 0 ? `${job.found} found so far. ` : ''}You can leave this page; it keeps going.
+          </div>
+        )}
 
         {missing.length === 0 && inReview.length === 0 && (
           <div className="card-body row"><Icon name="checkCircle" size={18} style={{ color: 'var(--good)' }} />
@@ -144,7 +177,9 @@ export default function DataPage() {
               })}
               {m.targets.length === 0 && <span className="dim" style={{ fontSize: 12.5 }}>Search the broker's research page for “{m.market} industrial {quarter}”.</span>}
             </div>
-            <div className="dim cov-reason">{reason(m)}</div>
+            <div className="dim cov-reason">
+              {m.search ? <span title={m.search.detail}>Web search {timeAgo(m.search.at)}: {m.search.status === 'failed' ? 'failed' : 'nothing usable found'}</span> : reason(m)}
+            </div>
           </div>
         ))}
 
@@ -168,6 +203,43 @@ export default function DataPage() {
             )}
           </>
         )}
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <div>
+            <div className="card-title">Ways reports arrive on their own</div>
+            <div className="card-sub">Everything below feeds the same checks as a dropped PDF. Nothing is ever guessed.</div>
+          </div>
+        </div>
+        <div className="grid k3" style={{ padding: 18 }}>
+          <div>
+            <div className="row"><Icon name="search" size={17} style={{ color: 'var(--accent)' }} /><span style={{ fontWeight: 600 }}>Web search</span><Chip tone="good" dot>On</Chip></div>
+            <div className="muted" style={{ marginTop: 6, fontSize: 13.5 }}>
+              Twice a day Claude searches the web for the latest report for each missing market and downloads the PDF
+              directly. Broker pages block robots, but the PDF files themselves are usually public.
+            </div>
+          </div>
+          <div>
+            <div className="row"><Icon name="sources" size={17} style={{ color: 'var(--accent)' }} /><span style={{ fontWeight: 600 }}>Page scan</span><Chip tone="good" dot>On</Chip></div>
+            <div className="muted" style={{ marginTop: 6, fontSize: 13.5 }}>
+              Twice a day the saved broker pages are checked for new report links. Most refuse automated visitors — see{' '}
+              <Link to="/sources" className="accent">Broker sources</Link> for what each one returned.
+            </div>
+          </div>
+          <div>
+            <div className="row"><Icon name="link" size={17} style={{ color: 'var(--accent)' }} /><span style={{ fontWeight: 600 }}>Email forwarding</span>
+              {stats && stats.inbound_enabled ? <Chip tone="info" dot>Ready to connect</Chip> : <Chip dot>Needs a passcode</Chip>}</div>
+            <div className="muted" style={{ marginTop: 6, fontSize: 13.5 }}>
+              Subscribe to each broker's research emails, then have an automation (Zapier, Make, Power Automate) send
+              new emails' attachments and text to:
+              <div className="mono" style={{ fontSize: 11.5, margin: '8px 0', padding: '7px 9px', background: 'var(--surface-2)', borderRadius: 6, wordBreak: 'break-all', color: 'var(--text)' }}>
+                {(API_BASE || window.location.origin)}/api/inbound?token=YOUR-PASSCODE
+              </div>
+              {stats && !stats.inbound_enabled && 'Set ADMIN_TOKEN on the backend first; that passcode is the token.'}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="grid k3">

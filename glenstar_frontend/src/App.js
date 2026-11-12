@@ -37,9 +37,9 @@ const NAV = [
 ];
 
 const META = {
-  overview:     { title: 'Overview',            sub: 'Where the industrial market stands, from the broker reports on file' },
+  overview:     { title: 'Overview',            sub: 'Where the puck is going: which markets are set to lead in two to three years' },
   markets:      { title: 'Markets',             sub: 'Every figure links to the report, page and sentence it came from' },
-  underwriting: { title: 'Underwriting inputs', sub: 'Broker-published figures for a market, ready for your model' },
+  underwriting: { title: 'Underwriting', sub: 'Assumptions by market and building size — broker figures, your inputs, and a quick feasibility check' },
   chat:         { title: 'Ask Claude',          sub: 'Questions answered from the report data, with sources' },
   data:         { title: 'Add reports',         sub: 'Drop in broker PDFs and see which markets still need one' },
   reports:      { title: 'Report library',      sub: 'Every report on file, by quarter' },
@@ -214,7 +214,8 @@ export default function App() {
         {marketName && (
           <Drawer title={marketName} subtitle={drawerMarket ? drawerMarket.region : undefined} onClose={() => setMarketName(null)}>
             {!marketData ? <Loading rows={5} />
-              : drawerMarket ? <MarketDetail market={drawerMarket} metricDefs={marketData.snapshot.metrics} ranking={drawerRanking} />
+              : drawerMarket ? <MarketDetail market={drawerMarket} metricDefs={marketData.snapshot.metrics} ranking={drawerRanking}
+                               sizeBands={marketData.snapshot.size_bands} />
                 : <div className="muted">No published data for this market.</div>}
           </Drawer>
         )}

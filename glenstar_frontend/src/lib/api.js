@@ -69,6 +69,7 @@ export async function request(path, { method = 'GET', body, form, base = API_BAS
 export const getJSON   = (path, opts) => request(path, { ...opts, method: 'GET' });
 export const postJSON  = (path, body, opts) => request(path, { ...opts, method: 'POST', body });
 export const patchJSON = (path, body, opts) => request(path, { ...opts, method: 'PATCH', body });
+export const putJSON   = (path, body, opts) => request(path, { ...opts, method: 'PUT', body });
 export const del       = (path, opts) => request(path, { ...opts, method: 'DELETE' });
 
 export function uploadFiles(files) {

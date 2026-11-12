@@ -35,6 +35,7 @@ export function fmtValue(v, opts = {}) {
   if (!v || v.value == null) return { text: DASH, unit: '' };
   if (v.unit === 'percent') return { text: fmtPercent(v.value), unit: '' };
   if (v.unit === 'sf') return { text: fmtSF(v.value, opts), unit: '' };
+  if (v.unit === 'months') return { text: trim(v.value, 1), unit: v.value === 1 ? ' month' : ' months' };
   if (v.metric === 'asking_rent') return { text: fmtMoney(v.value), unit: `/SF/${v.period || 'yr'}` };
   return { text: fmtMoney(v.value), unit: '/SF' };
 }
@@ -104,4 +105,40 @@ export function fmtBytes(n) {
 
 export function plural(n, word, pluralWord) {
   return `${n} ${n === 1 ? word : (pluralWord || `${word}s`)}`;
+}
+
+// A calculated trend indicator, e.g. { value: -90, unit: 'bps' } → "−90 bps".
+export function fmtSignal(sig) {
+  const v = sig.value;
+  const sign = v > 0 ? '+' : v < 0 ? '−' : '';
+  const abs = Math.abs(v);
+  if (sig.unit === 'bps') return `${sign}${trim(abs, 0)} bps`;
+  if (sig.unit === 'percent') return sig.key === 'pipeline_share' ? `${trim(abs, 1)}%` : `${sign}${trim(abs, 1)}%`;
+  if (sig.unit === 'sf') return `${sign}${fmtSF(abs)}`;
+  return String(v);
+}
+
+// Underwriting-sheet values (always shown on an annual $/SF basis for rents).
+export function fmtSheet(value, unit) {
+  if (value == null || Number.isNaN(value)) return '—';
+  if (unit === 'percent') return `${trim(value, 2)}%`;
+  if (unit === 'months') return `${trim(value, 1)} mo`;
+  if (unit === 'usd_psf_yr') return `${fmtMoney(value)}/SF/yr`;
+  return `${fmtMoney(value)}/SF`;
+}
+
+export function downloadCSV(filename, rows) {
+  const esc = c => {
+    const s = c == null ? '' : String(c);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const blob = new Blob([rows.map(r => r.map(esc).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

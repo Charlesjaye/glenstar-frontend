@@ -240,7 +240,21 @@ export const DOC_STATUS = {
   rejected:     { label: 'Not used',      tone: 'bad' },
 };
 
-export const ORIGIN_LABEL = { upload: 'Uploaded', link: 'From link', scan: 'Found by scan' };
+export const ORIGIN_LABEL = { upload: 'Uploaded', link: 'From link', scan: 'Found by scan', search: 'Found by search', email: 'From email' };
+
+export const DIRECTION = {
+  improving: { label: 'Improving', tone: 'good', arrow: '↗' },
+  mixed:     { label: 'Mixed',     tone: 'warn', arrow: '→' },
+  stable:    { label: 'Stable',    tone: 'info', arrow: '→' },
+  weakening: { label: 'Weakening', tone: 'bad',  arrow: '↘' },
+  unknown:   { label: 'No trend yet', tone: '', arrow: '·' },
+  unclear:   { label: 'Unclear',   tone: '',     arrow: '·' },
+};
+
+export function DirectionChip({ direction, title }) {
+  const d = DIRECTION[direction] || DIRECTION.unknown;
+  return <span className={`chip ${d.tone}`} title={title}>{d.arrow} {d.label}</span>;
+}
 
 export function DocStatusChip({ status }) {
   const s = DOC_STATUS[status] || { label: status, tone: '' };
