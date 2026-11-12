@@ -107,38 +107,44 @@ export default function DataPage() {
         {inReview.map(m => (
           <div className="cov-row" key={m.market}>
             <div><div style={{ fontWeight: 600 }}>{m.market}</div><div className="dim" style={{ fontSize: 12 }}>{m.region}</div></div>
-            <Chip tone="warn" dot>In review</Chip>
+            <div><Chip tone="warn" dot>In review</Chip></div>
             <div className="muted" style={{ fontSize: 13 }}>A {quarter} report has been read, but its figures are waiting for your check.</div>
-            <Link to={`/reports/${m.review_documents[0]}`} className="btn sm primary">Review</Link>
+            <div style={{ textAlign: 'right' }}><Link to={`/reports/${m.review_documents[0]}`} className="btn sm primary">Review</Link></div>
           </div>
         ))}
 
+        {missing.length > 0 && (
+          <div className="cov-hint">
+            <Icon name="info" size={15} />
+            Open the broker's page, download the {quarter} industrial report PDF, and drop it in the box above.
+            The coloured dot shows what happened when the site last checked that page.
+          </div>
+        )}
         {missing.map(m => (
           <div className="cov-row" key={m.market}>
             <div>
               <div style={{ fontWeight: 600 }}>{m.market}</div>
               <div className="dim" style={{ fontSize: 12 }}>{m.region}</div>
             </div>
-            {m.latest_quarter
-              ? <Chip tone="warn" icon="clock" title="Newest report on file">{m.latest_quarter}</Chip>
-              : <Chip>No report</Chip>}
             <div>
-              <div className="muted" style={{ fontSize: 12.5, marginBottom: 6 }}>{reason(m)} — download the PDF and drop it in above:</div>
-              <div className="cov-sources">
-                {m.targets.map(t => {
-                  const r = RESULT[t.result];
-                  return (
-                    <a key={t.id} className="src-link" href={t.url} target="_blank" rel="noreferrer"
-                       title={`${t.detail || 'Not checked yet'}${t.last_checked ? ` · checked ${timeAgo(t.last_checked)}` : ''}`}>
-                      {r && r.tone && <span className={`dot ${r.tone}`} />}
-                      {t.source}<Icon name="external" />
-                    </a>
-                  );
-                })}
-                {m.targets.length === 0 && <span className="dim" style={{ fontSize: 12.5 }}>Search the broker's research page for “{m.market} industrial {quarter}”.</span>}
-              </div>
+              {m.latest_quarter
+                ? <Chip tone="warn" icon="clock" title="Newest report on file — out of date">{m.latest_quarter} on file</Chip>
+                : <Chip>No report</Chip>}
             </div>
-            <span />
+            <div className="cov-sources">
+              {m.targets.map(t => {
+                const r = RESULT[t.result];
+                return (
+                  <a key={t.id} className="src-link" href={t.url} target="_blank" rel="noreferrer"
+                     title={`${r ? r.text : 'Not checked yet'}${t.last_checked ? ` · checked ${timeAgo(t.last_checked)}` : ''}`}>
+                    <span className={`dot ${r && r.tone ? r.tone : 'dim'}`} />
+                    {t.source}<Icon name="external" />
+                  </a>
+                );
+              })}
+              {m.targets.length === 0 && <span className="dim" style={{ fontSize: 12.5 }}>Search the broker's research page for “{m.market} industrial {quarter}”.</span>}
+            </div>
+            <div className="dim cov-reason">{reason(m)}</div>
           </div>
         ))}
 

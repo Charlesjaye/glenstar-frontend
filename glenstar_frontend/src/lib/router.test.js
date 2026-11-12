@@ -1,18 +1,20 @@
-import { pageFromPath } from './router';
+import { matchRoute } from './router';
 
 const routes = [
-  { id: 'thesis', path: '/' },
+  { id: 'overview', path: '/' },
   { id: 'markets', path: '/markets' },
-  { id: 'underwriting', path: '/underwriting' },
+  { id: 'reports', path: '/reports' },
+  { id: 'report', path: '/reports/:id' },
 ];
 
 test.each([
-  ['/', 'thesis'],
-  ['/markets', 'markets'],
-  ['/markets/', 'markets'],
-  ['/underwriting', 'underwriting'],
-  ['/does-not-exist', 'thesis'],
-  ['', 'thesis'],
-])('%s -> %s', (path, expected) => {
-  expect(pageFromPath(path, routes)).toBe(expected);
+  ['/', 'overview', {}],
+  ['/markets', 'markets', {}],
+  ['/markets/', 'markets', {}],
+  ['/reports', 'reports', {}],
+  ['/reports/42', 'report', { id: '42' }],
+  ['/does-not-exist', 'overview', {}],
+  ['', 'overview', {}],
+])('%s -> %s', (path, id, params) => {
+  expect(matchRoute(path, routes)).toEqual({ id, params });
 });

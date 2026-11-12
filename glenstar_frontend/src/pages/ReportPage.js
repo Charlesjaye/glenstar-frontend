@@ -19,6 +19,15 @@ function ValueRow({ v, active, onJump, onAction, busy }) {
   const failures = v.checks.filter(c => !c.ok);
   const passes = v.checks.filter(c => c.ok && !c.skipped);
 
+  // When the stored number disagrees with the figure printed in the report, offer the printed one.
+  const printedNumber = (() => {
+    if (v.unit === 'sf') return null;                       // square-foot figures may need unit scaling
+    const m = (v.printed || '').match(/\d[\d,]*(?:\.\d+)?/);
+    if (!m) return null;
+    const n = Number(m[0].replace(/,/g, '')) * (/^\s*[-−–(]/.test(v.printed) ? -1 : 1);
+    return Math.abs(n - v.value) > 1e-9 ? n : null;
+  })();
+
   const save = () => {
     const n = Number(draft.replace(/,/g, ''));
     if (draft.trim() === '' || Number.isNaN(n)) return;
@@ -70,9 +79,14 @@ function ValueRow({ v, active, onJump, onAction, busy }) {
       </div>
       {!editing && (
         <div className="val-actions">
+          {v.status === 'needs_review' && printedNumber != null && (
+            <button className="btn xs primary" disabled={busy} onClick={() => onAction(v, { action: 'edit', value: printedNumber })}>
+              <Icon name="check" />Use the printed figure ({printedNumber})
+            </button>
+          )}
           {v.status === 'needs_review' && (
-            <button className="btn xs primary" disabled={busy} onClick={() => onAction(v, { action: 'confirm' })}>
-              <Icon name="check" />Correct — publish
+            <button className={`btn xs ${printedNumber == null ? 'primary' : ''}`} disabled={busy} onClick={() => onAction(v, { action: 'confirm' })}>
+              <Icon name="check" />{printedNumber == null ? 'Correct — publish' : `Keep ${v.value}`}
             </button>
           )}
           <button className="btn xs" disabled={busy} onClick={() => { setDraft(String(v.value)); setEditing(true); }}>
@@ -254,10 +268,16 @@ export default function ReportPage({ id, search }) {
       )}
 
       <div className="review">
-        <div className="pdf-pane">
-          {isPdf
-            ? <iframe key={page || 'start'} title="Report PDF" src={documentFileUrl(d.id, page)} />
-            : <iframe title="Report text" src={documentFileUrl(d.id)} />}
+        <div>
+          <div className="pdf-pane">
+            {isPdf
+              ? <iframe key={page || 'start'} title="Report PDF" src={documentFileUrl(d.id, page)} />
+              : <iframe title="Report text" src={documentFileUrl(d.id)} />}
+          </div>
+          <div className="spread dim" style={{ fontSize: 12.5, marginTop: 8 }}>
+            <span>{page ? `Showing page ${page}` : 'The original document, exactly as added'}</span>
+            <a className="accent" href={documentFileUrl(d.id, page)} target="_blank" rel="noreferrer">Open in a new tab ↗</a>
+          </div>
         </div>
 
         <div className="card">

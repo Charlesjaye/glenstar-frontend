@@ -20,11 +20,15 @@ function Coverage({ stats }) {
   const pct = n => `${(100 * n) / Math.max(1, c.total)}%`;
   return (
     <div className="card card-body">
-      <div className="spread" style={{ alignItems: 'flex-start' }}>
-        <div>
-          <div className="eyebrow">{stats.expected_quarter} coverage</div>
-          <div className="kpi-value">{c.current}<span className="dim" style={{ fontSize: 18 }}> of {c.total} markets</span></div>
-          <div className="kpi-note">have a {stats.expected_quarter} broker report on file</div>
+      <div className="spread" style={{ flexWrap: 'wrap' }}>
+        <div className="row" style={{ gap: 18, alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <div className="kpi-value" style={{ marginTop: 0 }}>
+            {c.current}<span className="dim" style={{ fontSize: 18 }}> of {c.total}</span>
+          </div>
+          <div>
+            <div style={{ fontWeight: 600 }}>tracked markets have a {stats.expected_quarter} report</div>
+            <div className="muted" style={{ fontSize: 13 }}>{stats.expected_quarter} is the latest quarter brokers have published.</div>
+          </div>
         </div>
         <Link to="/data" className="btn primary"><Icon name="upload" />Add reports</Link>
       </div>
@@ -101,8 +105,8 @@ export default function OverviewPage() {
 
   return (
     <div className="stack">
-      <div className="grid k4">
-        <Coverage stats={stats} />
+      <Coverage stats={stats} />
+      <div className="grid k3">
         {[
           { label: 'Tightest vacancy', m: tight, key: 'vacancy_rate' },
           { label: absorbKey === 'net_absorption_ytd' ? 'Strongest absorption (YTD)' : 'Strongest absorption', m: absorb, key: absorbKey },

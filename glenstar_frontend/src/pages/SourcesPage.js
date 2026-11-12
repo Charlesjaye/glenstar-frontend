@@ -127,7 +127,7 @@ export default function SourcesPage() {
                       {t.result === 'new_report' && t.last_document_id && (
                         <Link to={`/reports/${t.last_document_id}`} className="accent" style={{ marginLeft: 8, fontSize: 12.5 }}>Open report</Link>
                       )}
-                      {t.detail && ['blocked', 'not_found', 'error'].includes(t.result) && <div className="dim" style={{ fontSize: 12, marginTop: 3 }}>{t.detail}</div>}
+                      {t.detail && ['not_found', 'error'].includes(t.result) && <div className="dim" style={{ fontSize: 12, marginTop: 3 }}>{t.detail}</div>}
                     </td>
                     <td className="l" style={{ maxWidth: 340 }}>
                       {editing === t.id ? (
