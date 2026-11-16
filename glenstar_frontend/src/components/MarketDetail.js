@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Fig from './Fig';
-import { Banner, Chip, Icon, Link, QuarterChip, useApp } from './ui';
+import { Banner, Chip, DirectionChip, Icon, Link, QuarterChip, useApp } from './ui';
+import { fmtSignal } from '../lib/format';
 
 // Tab-separated block for pasting into Excel: every figure with its source.
 export function excelBlock(m, metricDefs) {
@@ -26,12 +27,16 @@ export function excelBlock(m, metricDefs) {
   return lines.join('\n');
 }
 
-export default function MarketDetail({ market: m, metricDefs, ranking }) {
+export default function MarketDetail({ market: m, metricDefs, ranking, sizeBands }) {
   const { toast } = useApp();
   const [copied, setCopied] = useState(false);
   const present = metricDefs.filter(d => m.metrics[d.key]);
   const absent = metricDefs.filter(d => !m.metrics[d.key]);
-  const segMetrics = metricDefs.filter(d => m.segments.some(s => s.metrics[d.key]));
+  const sizeRows = m.segments.filter(s => s.kind === 'size');
+  const typeRows = m.segments.filter(s => s.kind !== 'size');
+  const cols = rows => metricDefs.filter(d => rows.some(s => s.metrics[d.key]));
+  const bandLabel = Object.fromEntries((sizeBands || []).map(b => [b.key, b.short]));
+  const signals = (m.trend && m.trend.signals) || [];
   const historyMetrics = metricDefs.filter(d => m.history.some(h => h.metrics[d.key])).slice(0, 6);
 
   const copy = async () => {
@@ -66,14 +71,44 @@ export default function MarketDetail({ market: m, metricDefs, ranking }) {
 
       {ranking && (
         <div className="card card-body" style={{ marginBottom: 16, background: 'var(--surface-2)' }}>
-          <div className="spread">
-            <div className="eyebrow">AI assessment · based on the reported figures</div>
-            <Chip tone={ranking.tier === 'Primary' ? 'good' : ranking.tier === 'Avoid' ? 'bad' : ranking.tier === 'Caution' ? 'warn' : 'info'}>
-              {ranking.tier} · {ranking.score}/100
-            </Chip>
+          <div className="spread" style={{ flexWrap: 'wrap' }}>
+            <div className="eyebrow">2–3 year outlook · AI judgement from the reported figures</div>
+            <div className="row">
+              <Chip tone={{ Emerging: 'accent', Established: 'good', Watch: 'warn', Deteriorating: 'bad' }[ranking.outlook] || ''}>{ranking.outlook}</Chip>
+              <Chip tone="outline">Trajectory {ranking.score}/100</Chip>
+              <Chip tone="outline">{ranking.confidence} confidence</Chip>
+            </div>
           </div>
           <div style={{ fontWeight: 600, marginTop: 8 }}>{ranking.headline}</div>
-          <div className="muted" style={{ marginTop: 4 }}>{ranking.detail}</div>
+          <div className="muted" style={{ marginTop: 4 }}>{ranking.thesis}</div>
+          {ranking.watch && <div className="dim" style={{ marginTop: 8, fontSize: 13 }}><strong style={{ color: 'var(--text-2)' }}>What would change this view:</strong> {ranking.watch}</div>}
+        </div>
+      )}
+
+      <div className="section-title">
+        Direction of travel
+        <DirectionChip direction={m.trend ? m.trend.direction : 'unknown'} title="Calculated from the report figures below" />
+      </div>
+      {signals.length === 0 ? (
+        <div className="dim" style={{ fontSize: 13 }}>
+          Not enough figures on file to show a direction yet. It appears once a report prints prior-period
+          comparisons, or a second quarter is added from the same broker.
+        </div>
+      ) : (
+        <div className="card">
+          {signals.map(sig => (
+            <div className="signal" key={sig.key}>
+              <span className={`signal-arrow ${sig.tone > 0 ? 'good' : sig.tone < 0 ? 'bad' : 'dim'}`}>{sig.tone > 0 ? '▲' : sig.tone < 0 ? '▼' : '●'}</span>
+              <span className="grow">
+                <span style={{ fontWeight: 600 }}>{sig.label}</span>
+                <span className="dim" style={{ display: 'block', fontSize: 12.5 }}>{sig.detail}</span>
+              </span>
+              <span className="num" style={{ fontWeight: 600 }}>{fmtSignal(sig)}</span>
+            </div>
+          ))}
+          <div className="dim" style={{ padding: '10px 14px', fontSize: 12, borderTop: '1px solid var(--line)' }}>
+            Calculated by the site from the report figures shown (same broker only). ▲ favourable for a developer, ▼ unfavourable.
+          </div>
         </div>
       )}
 
@@ -96,20 +131,46 @@ export default function MarketDetail({ market: m, metricDefs, ranking }) {
         </div>
       )}
 
-      {m.segments.length > 0 && (
+      {sizeRows.length > 0 && (
         <>
-          <div className="section-title">By building size / product type <span className="dim" style={{ fontWeight: 400, fontSize: 12 }}>Bands as published by the broker</span></div>
+          <div className="section-title">By building size <span className="dim" style={{ fontWeight: 400, fontSize: 12 }}>The broker's own size bands, mapped to Glenstar's</span></div>
           <div className="card table-wrap">
             <table className="table">
               <thead><tr>
-                <th className="l">Segment</th>
-                {segMetrics.map(d => <th key={d.key}>{d.label}</th>)}
+                <th className="l">Broker's band</th><th className="l">Glenstar size</th>
+                {cols(sizeRows).map(d => <th key={d.key}>{d.label}</th>)}
               </tr></thead>
               <tbody>
-                {m.segments.map(s => (
+                {sizeRows.map(s => (
+                  <tr key={s.segment}>
+                    <td className="l"><span className="strong">{s.range || s.segment}</span>
+                      {s.range && s.range !== s.segment && <div className="dim" style={{ fontSize: 12 }}>printed as “{s.segment}”</div>}</td>
+                    <td className="l">
+                      <span className="row wrap" style={{ gap: 5 }}>
+                        {s.bands.map(k => <Chip key={k} tone={s.fit === 'exact' ? 'good' : 'outline'}>{bandLabel[k] || k}</Chip>)}
+                        {s.fit === 'spans' && <span className="dim" style={{ fontSize: 12 }}>covers {s.bands.length} of our sizes</span>}
+                        {s.fit === 'within' && <span className="dim" style={{ fontSize: 12 }}>part of this size</span>}
+                      </span>
+                    </td>
+                    {cols(sizeRows).map(d => <td key={d.key}><Fig v={s.metrics[d.key]} /></td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {typeRows.length > 0 && (
+        <>
+          <div className="section-title">By product type <span className="dim" style={{ fontWeight: 400, fontSize: 12 }}>As published by the broker</span></div>
+          <div className="card table-wrap">
+            <table className="table">
+              <thead><tr><th className="l">Type</th>{cols(typeRows).map(d => <th key={d.key}>{d.label}</th>)}</tr></thead>
+              <tbody>
+                {typeRows.map(s => (
                   <tr key={s.segment}>
                     <td className="l strong">{s.segment}</td>
-                    {segMetrics.map(d => <td key={d.key}><Fig v={s.metrics[d.key]} /></td>)}
+                    {cols(typeRows).map(d => <td key={d.key}><Fig v={s.metrics[d.key]} /></td>)}
                   </tr>
                 ))}
               </tbody>
@@ -131,7 +192,7 @@ export default function MarketDetail({ market: m, metricDefs, ranking }) {
                 {m.history.map(h => (
                   <tr key={h.quarter}>
                     <td className="l strong">{h.quarter}</td>
-                    <td className="l muted">{h.source}</td>
+                    <td className="l muted">{h.source}{h.restated && <span className="dim" title="Comparison figures printed in a later report"> · as restated</span>}</td>
                     {historyMetrics.map(d => <td key={d.key}><Fig v={h.metrics[d.key]} /></td>)}
                   </tr>
                 ))}

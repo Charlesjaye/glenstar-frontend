@@ -240,7 +240,21 @@ export const DOC_STATUS = {
   rejected:     { label: 'Not used',      tone: 'bad' },
 };
 
-export const ORIGIN_LABEL = { upload: 'Uploaded', link: 'From link', scan: 'Found by scan' };
+export const ORIGIN_LABEL = { upload: 'Uploaded', link: 'From link', scan: 'Found by scan', search: 'Found by search', email: 'From email' };
+
+export const DIRECTION = {
+  improving: { label: 'Improving', tone: 'good', arrow: '↗' },
+  mixed:     { label: 'Mixed',     tone: 'warn', arrow: '→' },
+  stable:    { label: 'Stable',    tone: 'info', arrow: '→' },
+  weakening: { label: 'Weakening', tone: 'bad',  arrow: '↘' },
+  unknown:   { label: 'No trend yet', tone: '', arrow: '·' },
+  unclear:   { label: 'Unclear',   tone: '',     arrow: '·' },
+};
+
+export function DirectionChip({ direction, title }) {
+  const d = DIRECTION[direction] || DIRECTION.unknown;
+  return <span className={`chip ${d.tone}`} title={title}>{d.arrow} {d.label}</span>;
+}
 
 export function DocStatusChip({ status }) {
   const s = DOC_STATUS[status] || { label: status, tone: '' };
@@ -256,4 +270,32 @@ export function QuarterChip({ quarter, behind }) {
       {quarter}
     </Chip>
   );
+}
+
+
+// Keeps one broken page from blanking the whole site.
+export class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error) {
+    console.error('Page failed to render:', error);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <Banner tone="bad" title="This page hit a problem"
+              action={<button className="btn sm" onClick={() => window.location.reload()}><Icon name="refresh" />Reload</button>}>
+        Something on this page could not be displayed. The rest of the site still works — try reloading. If it keeps
+        happening, the site and its data service may be on different versions; redeploy both.
+      </Banner>
+    );
+  }
 }

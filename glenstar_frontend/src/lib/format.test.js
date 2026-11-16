@@ -44,3 +44,16 @@ test('tone and plurals', () => {
   expect(plural(1, 'report')).toBe('1 report');
   expect(plural(3, 'report')).toBe('3 reports');
 });
+
+test('underwriting sheet values and trend indicators', () => {
+  const { fmtSheet, fmtSignal } = require('./format');
+  expect(fmtSheet(10.6, 'usd_psf_yr')).toBe('$10.60/SF/yr');
+  expect(fmtSheet(82, 'usd_psf')).toBe('$82.00/SF');
+  expect(fmtSheet(6.5, 'percent')).toBe('6.5%');
+  expect(fmtSheet(60, 'months')).toBe('60 mo');
+  expect(fmtSheet(null, 'percent')).toBe('—');
+  expect(fmtSignal({ key: 'vacancy_change_year', value: -90, unit: 'bps' })).toBe('−90 bps');
+  expect(fmtSignal({ key: 'rent_change_year', value: 4.8, unit: 'percent' })).toBe('+4.8%');
+  expect(fmtSignal({ key: 'pipeline_share', value: 2.4, unit: 'percent' })).toBe('2.4%');
+  expect(fmtValue({ metric: 'free_rent_months', unit: 'months', value: 3 })).toEqual({ text: '3', unit: ' months' });
+});

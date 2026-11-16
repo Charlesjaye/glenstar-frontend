@@ -8,11 +8,11 @@ the report, page and quote it came from.
 
 | URL              | Page                | What it does |
 | ---------------- | ------------------- | ------------ |
-| `/`              | Overview            | Quarter coverage, market leaders, AI investment thesis |
-| `/markets`       | Markets             | Sortable table of published figures; click a market for detail, size bands and history |
-| `/underwriting`  | Underwriting inputs | Broker-published figures for one market, with "Copy for Excel" |
+| `/`              | Overview            | Quarter coverage and the forward thesis: which markets should lead in two to three years |
+| `/markets`       | Markets             | Sortable table with direction of travel, a building-size selector and CSV export; click a market for detail |
+| `/underwriting`  | Underwriting        | Assumption sheet by market and building size (broker figure / your assumption / unverified estimate), quick feasibility, Excel/CSV export |
 | `/chat`          | Ask Claude          | Questions answered from the report data |
-| `/data`          | Add reports         | Drag-and-drop PDF upload, items needing review, coverage for the latest quarter |
+| `/data`          | Add reports         | Drag-and-drop PDF upload, web search for missing reports, items needing review, quarter coverage |
 | `/reports`       | Report library      | Every report on file, grouped by quarter |
 | `/reports/:id`   | Report              | The PDF beside the figures read from it; confirm, fix or remove each |
 | `/sources`       | Broker sources      | The pages the scanner checks and what happened; edit links; scan now |

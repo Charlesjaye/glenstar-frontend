@@ -9,7 +9,7 @@ import ReportsPage      from './pages/ReportsPage';
 import ReportPage       from './pages/ReportPage';
 import SourcesPage      from './pages/SourcesPage';
 import MarketDetail     from './components/MarketDetail';
-import { AppContext, Banner, Drawer, Icon, Loading, Modal, useToasts } from './components/ui';
+import { AppContext, Banner, Drawer, ErrorBoundary, Icon, Loading, Modal, useToasts } from './components/ui';
 import { getJSON, onUnauthorized, postJSON, setAdminToken } from './lib/api';
 import { useRoute, linkHandler } from './lib/router';
 
@@ -37,9 +37,9 @@ const NAV = [
 ];
 
 const META = {
-  overview:     { title: 'Overview',            sub: 'Where the industrial market stands, from the broker reports on file' },
+  overview:     { title: 'Overview',            sub: 'Where the puck is going: which markets are set to lead in two to three years' },
   markets:      { title: 'Markets',             sub: 'Every figure links to the report, page and sentence it came from' },
-  underwriting: { title: 'Underwriting inputs', sub: 'Broker-published figures for a market, ready for your model' },
+  underwriting: { title: 'Underwriting', sub: 'Assumptions by market and building size — broker figures, your inputs, and a quick feasibility check' },
   chat:         { title: 'Ask Claude',          sub: 'Questions answered from the report data, with sources' },
   data:         { title: 'Add reports',         sub: 'Drop in broker PDFs and see which markets still need one' },
   reports:      { title: 'Report library',      sub: 'Every report on file, by quarter' },
@@ -199,6 +199,7 @@ export default function App() {
                   </Banner>
                 </div>
               )}
+              <ErrorBoundary key={`${page}-${route.params.id || ''}`}>
               {page === 'overview'     && <OverviewPage />}
               {page === 'markets'      && <MarketsPage />}
               {page === 'underwriting' && <UnderwritingPage />}
@@ -207,6 +208,7 @@ export default function App() {
               {page === 'reports'      && <ReportsPage />}
               {page === 'report'       && <ReportPage id={route.params.id} search={route.search} />}
               {page === 'sources'      && <SourcesPage />}
+              </ErrorBoundary>
             </div>
           </main>
         </div>
@@ -214,7 +216,8 @@ export default function App() {
         {marketName && (
           <Drawer title={marketName} subtitle={drawerMarket ? drawerMarket.region : undefined} onClose={() => setMarketName(null)}>
             {!marketData ? <Loading rows={5} />
-              : drawerMarket ? <MarketDetail market={drawerMarket} metricDefs={marketData.snapshot.metrics} ranking={drawerRanking} />
+              : drawerMarket ? <ErrorBoundary><MarketDetail market={drawerMarket} metricDefs={marketData.snapshot.metrics} ranking={drawerRanking}
+                               sizeBands={marketData.snapshot.size_bands} /></ErrorBoundary>
                 : <div className="muted">No published data for this market.</div>}
           </Drawer>
         )}
